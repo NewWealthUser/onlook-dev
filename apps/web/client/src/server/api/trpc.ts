@@ -7,12 +7,9 @@
  * need to use are documented accordingly near the end.
  */
 
-import { createClient } from '@/utils/supabase/server';
 import { db } from '@onlook/db/src/client';
-import type { User } from '@supabase/supabase-js';
 import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
-import type { SetRequiredDeep } from 'type-fest';
 import { ZodError } from 'zod';
 
 /**
@@ -28,20 +25,8 @@ import { ZodError } from 'zod';
  * @see https://trpc.io/docs/server/context
  */
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-    const supabase = await createClient();
-    const {
-        data: { user },
-        error,
-    } = await supabase.auth.getUser();
-
-    if (error) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: error.message });
-    }
-
     return {
         db,
-        supabase,
-        user,
         ...opts,
     };
 };
@@ -120,30 +105,8 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 export const publicProcedure = t.procedure.use(timingMiddleware);
 
 /**
- * Protected (authenticated) procedure
- *
- * If you want a query or mutation to ONLY be accessible to logged in users, use this. It verifies
- * the session is valid and guarantees `ctx.session.user` is not null.
+ * Protected procedure (now just an alias for publicProcedure since we removed auth)
  *
  * @see https://trpc.io/docs/procedures
  */
-export const protectedProcedure = t.procedure.use(timingMiddleware).use(({ ctx, next }) => {
-    if (!ctx.user) {
-        throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    if (!ctx.user.email) {
-        throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'User must have an email address to access this resource',
-        });
-    }
-
-    return next({
-        ctx: {
-            // infers the `session` as non-nullable
-            user: ctx.user as SetRequiredDeep<User, 'email'>,
-            db: ctx.db,
-        },
-    });
-});
+export const protectedProcedure = publicProcedure;

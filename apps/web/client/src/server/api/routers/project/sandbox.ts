@@ -8,13 +8,22 @@ import { createTRPCRouter, protectedProcedure } from '../../trpc';
 function getProvider({
     sandboxId,
     userId,
-    provider = CodeProvider.CodeSandbox,
+    provider = CodeProvider.Local,
 }: {
     sandboxId: string,
     provider?: CodeProvider,
     userId?: undefined | string,
 }) {
-    if (provider === CodeProvider.CodeSandbox) {
+    if (provider === CodeProvider.Local) {
+        return createCodeProviderClient(CodeProvider.Local, {
+            providerOptions: {
+                local: {
+                    projectPath: `./onlook-projects/${sandboxId}`,
+                    port: 3000 + Math.floor(Math.random() * 1000), // Random port to avoid conflicts
+                },
+            },
+        });
+    } else if (provider === CodeProvider.CodeSandbox) {
         return createCodeProviderClient(CodeProvider.CodeSandbox, {
             providerOptions: {
                 codesandbox: {
@@ -150,37 +159,40 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input }) => {
-            const MAX_RETRY_ATTEMPTS = 3;
-            const DEFAULT_PORT = 3000;
-            let lastError: Error | null = null;
+            try {
+                // Create a local sandbox ID
+                const sandboxId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+                const projectPath = `./onlook-projects/${sandboxId}`;
+                const port = 3000 + Math.floor(Math.random() * 1000);
 
-            for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
-                try {
-                    const CodesandboxProvider = await getStaticCodeProvider(CodeProvider.CodeSandbox);
-                    const sandbox = await CodesandboxProvider.createProjectFromGit({
-                        repoUrl: input.repoUrl,
-                        branch: input.branch,
+                // Clone the repository
+                const { spawn } = await import('child_process');
+                const gitProcess = spawn('git', ['clone', '--branch', input.branch, input.repoUrl, projectPath], {
+                    stdio: 'pipe'
+                });
+
+                await new Promise((resolve, reject) => {
+                    gitProcess.on('close', (code) => {
+                        if (code === 0) {
+                            resolve(undefined);
+                        } else {
+                            reject(new Error(`Git clone failed with code ${code}`));
+                        }
                     });
+                });
 
-                    const previewUrl = getSandboxPreviewUrl(sandbox.id, DEFAULT_PORT);
+                const previewUrl = `http://localhost:${port}`;
 
-                    return {
-                        sandboxId: sandbox.id,
-                        previewUrl,
-                    };
-                } catch (error) {
-                    lastError = error instanceof Error ? error : new Error(String(error));
-
-                    if (attempt < MAX_RETRY_ATTEMPTS) {
-                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-                    }
-                }
+                return {
+                    sandboxId,
+                    previewUrl,
+                };
+            } catch (error) {
+                throw new TRPCError({
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: `Failed to create GitHub sandbox: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    cause: error,
+                });
             }
-
-            throw new TRPCError({
-                code: 'INTERNAL_SERVER_ERROR',
-                message: `Failed to create GitHub sandbox after ${MAX_RETRY_ATTEMPTS} attempts: ${lastError?.message}`,
-                cause: lastError,
-            });
         }),
 });

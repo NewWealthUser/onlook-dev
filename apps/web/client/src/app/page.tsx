@@ -1,37 +1,38 @@
 'use client';
 
-import { CreateManagerProvider } from '@/components/store/create';
-import { SubscriptionModal } from '@/components/ui/pricing-modal';
-import { NonProjectSettingsModal } from '@/components/ui/settings-modal/non-project';
-import { AuthModal } from './_components/auth-modal';
-import { Hero } from './_components/hero';
-import { ContributorSection } from './_components/landing-page/contributor-section';
-import { CTASection } from './_components/landing-page/cta-section';
-import { FAQSection } from './_components/landing-page/faq-section';
-import { ResponsiveMockupSection } from './_components/landing-page/responsive-mockup-section';
-import { TestimonialsSection } from './_components/landing-page/testimonials-section';
-import { WhatCanOnlookDoSection } from './_components/landing-page/what-can-onlook-do-section';
-import { WebsiteLayout } from './_components/website-layout';
+import { CursorEditor } from '@/components/cursor-editor';
+import { useState } from 'react';
 
 export default function Main() {
+    const [currentProject, setCurrentProject] = useState<string | null>(null);
+
     return (
-        <CreateManagerProvider>
-            <WebsiteLayout showFooter={true}>
-                <div className="w-screen h-screen flex items-center justify-center" id="hero">
-                    <Hero />
+        <div className="h-screen w-screen bg-gray-50 dark:bg-gray-900">
+            {currentProject ? (
+                <CursorEditor 
+                    projectId={currentProject}
+                    onCodeChange={(code) => {
+                        console.log('Code changed:', code);
+                    }}
+                />
+            ) : (
+                <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                        <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+                            Welcome to Onlook
+                        </h1>
+                        <p className="text-xl text-gray-600 dark:text-gray-400 mb-8">
+                            Your AI-powered code editor with Cursor integration
+                        </p>
+                        <button
+                            onClick={() => setCurrentProject('demo-project')}
+                            className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                        >
+                            Start Coding
+                        </button>
+                    </div>
                 </div>
-                <ResponsiveMockupSection />
-                {/* <CodeOneToOneSection /> */}
-                <WhatCanOnlookDoSection />
-                {/* <ObsessForHoursSection /> */}
-                <ContributorSection />
-                <TestimonialsSection />
-                <FAQSection />
-                <CTASection />
-                <AuthModal />
-                <NonProjectSettingsModal />
-                <SubscriptionModal />
-            </WebsiteLayout >
-        </CreateManagerProvider>
+            )}
+        </div>
     );
 }

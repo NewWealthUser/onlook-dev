@@ -1,4 +1,5 @@
 export enum CodeProvider {
+    Local = 'local',
     CodeSandbox = 'code_sandbox',
     E2B = 'e2b',
     Daytona = 'daytona',

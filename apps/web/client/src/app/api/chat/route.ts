@@ -6,33 +6,18 @@ import { ChatType, type ChatMessage, type ChatMetadata } from '@onlook/models';
 import { stepCountIs, streamText } from 'ai';
 import { type NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { checkMessageLimit, decrementUsage, errorHandler, getModelFromType, getSupabaseUser, getSystemPromptFromType, incrementUsage, repairToolCall } from './helpers';
+import { checkMessageLimit, decrementUsage, errorHandler, getModelFromType, getSystemPromptFromType, incrementUsage, repairToolCall } from './helpers';
+import { CursorProvider } from '@onlook/ai/src/cursor/cursor-provider';
 
 const MAX_STEPS = 20;
 
 export async function POST(req: NextRequest) {
     try {
-        const user = await getSupabaseUser(req);
-        if (!user) {
-            return new Response(JSON.stringify({
-                error: 'Unauthorized, no user found. Please login again.',
-                code: 401
-            }), {
-                status: 401,
-                headers: { 'Content-Type': 'application/json' }
-            });
-        }
+        // No authentication required - using local storage
         const usageCheckResult = await checkMessageLimit(req);
         if (usageCheckResult.exceeded) {
-            trackEvent({
-                distinctId: user.id,
-                event: 'message_limit_exceeded',
-                properties: {
-                    usage: usageCheckResult.usage,
-                },
-            });
             return new Response(JSON.stringify({
-                error: 'Message limit exceeded. Please upgrade to a paid plan.',
+                error: 'Message limit exceeded. Please try again later.',
                 code: 402,
                 usage: usageCheckResult.usage,
             }), {
@@ -41,7 +26,7 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        return streamResponse(req, user.id);
+        return streamResponse(req, 'local-user');
     } catch (error: unknown) {
         console.error('Error in chat', error);
         return new Response(JSON.stringify({

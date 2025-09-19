@@ -12,39 +12,28 @@ import { getLocale } from 'next-intl/server';
 import { Inter } from 'next/font/google';
 import Script from 'next/script';
 import { ThemeProvider } from './_components/theme';
-import { AuthProvider } from './auth/auth-context';
 import { faqSchema, organizationSchema } from './seo';
 import RB2BLoader from '@/components/rb2b-loader';
 
 const isProduction = env.NODE_ENV === 'production';
 
 export const metadata: Metadata = {
-    title: 'Onlook – Cursor for Designers',
-    description: 'The power of Cursor for your own website. Onlook lets you edit your React website and write your changes back to code in real-time. Iterate and experiment with AI.',
+    title: 'Onlook – Local AI Code Editor',
+    description: 'A local-first AI-powered code editor with Cursor integration. Edit, debug, and build with AI assistance - all running locally on your machine.',
     icons: [{ rel: 'icon', url: '/favicon.ico' }],
     openGraph: {
-        url: 'https://onlook.com/',
+        url: 'http://localhost:3000/',
         type: 'website',
         siteName: 'Onlook',
-        title: 'Onlook – Cursor for Designers',
-        description: 'The power of Cursor for your own website. Onlook lets you edit your React website and write your changes back to code in real-time. Iterate and experiment with AI.',
-        images: [
-            {
-                url: 'https://framerusercontent.com/images/ScnnNT7JpmUya7afqGAets8.png',
-            },
-        ],
+        title: 'Onlook – Local AI Code Editor',
+        description: 'A local-first AI-powered code editor with Cursor integration. Edit, debug, and build with AI assistance - all running locally on your machine.',
     },
     twitter: {
         card: 'summary_large_image',
         site: '@onlookdev',
         creator: '@onlookdev',
-        title: 'Onlook – Cursor for Designers',
-        description: 'The power of Cursor for your own website. Onlook lets you edit your React website and write your changes back to code in real-time. Iterate and experiment with AI.',
-        images: [
-            {
-                url: 'https://framerusercontent.com/images/ScnnNT7JpmUya7afqGAets8.png',
-            },
-        ],
+        title: 'Onlook – Local AI Code Editor',
+        description: 'A local-first AI-powered code editor with Cursor integration. Edit, debug, and build with AI assistance - all running locally on your machine.',
     },
 };
 
@@ -87,12 +76,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                                 enableSystem
                                 disableTransitionOnChange
                             >
-                                <AuthProvider>
-                                    <NextIntlClientProvider>
-                                        {children}
-                                        <Toaster />
-                                    </NextIntlClientProvider>
-                                </AuthProvider>
+                                <NextIntlClientProvider>
+                                    {children}
+                                    <Toaster />
+                                </NextIntlClientProvider>
                             </ThemeProvider>
                         </TelemetryProvider>
                     </FeatureFlagsProvider>

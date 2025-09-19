@@ -8,14 +8,19 @@ export const env = createEnv({
      */
     server: {
         NODE_ENV: z.enum(['development', 'test', 'production']),
-        CSB_API_KEY: z.string(),
-        SUPABASE_DATABASE_URL: z.string().url(),
-        RESEND_API_KEY: z.string().optional(),
-        FREESTYLE_API_KEY: z.string().optional(),
+        
+        // Local storage
+        ONLOOK_PROJECTS_DIR: z.string().default('./onlook-projects'),
 
-        // Stripe
-        STRIPE_WEBHOOK_SECRET: z.string().optional(),
-        STRIPE_SECRET_KEY: z.string().optional(),
+        // AI Model providers
+        OPENROUTER_API_KEY: z.string().optional(),
+        ANTHROPIC_API_KEY: z.string().optional(),
+        GOOGLE_AI_STUDIO_API_KEY: z.string().optional(),
+        OPENAI_API_KEY: z.string().optional(),
+
+        // Cursor integration
+        CURSOR_API_KEY: z.string().optional(),
+        CURSOR_PLATFORM_ENABLED: z.boolean().default(false),
 
         // Apply models
         MORPH_API_KEY: z.string().optional(),
@@ -30,22 +35,6 @@ export const env = createEnv({
         GOOGLE_CLIENT_EMAIL: z.string().optional(),
         GOOGLE_PRIVATE_KEY: z.string().optional(),
         GOOGLE_PRIVATE_KEY_ID: z.string().optional(),
-
-        // Model providers
-        OPENROUTER_API_KEY: z.string(),
-        ANTHROPIC_API_KEY: z.string().optional(),
-        GOOGLE_AI_STUDIO_API_KEY: z.string().optional(),
-        OPENAI_API_KEY: z.string().optional(),
-
-        // n8n
-        N8N_WEBHOOK_URL: z.string().optional(),
-        N8N_API_KEY: z.string().optional(),
-
-        // Firecrawl
-        FIRECRAWL_API_KEY: z.string().optional(),
-
-        // Exa
-        EXA_API_KEY: z.string().optional(),
 
         // Langfuse
         LANGFUSE_SECRET_KEY: z.string().optional(),
@@ -64,13 +53,10 @@ export const env = createEnv({
      */
     client: {
         NEXT_PUBLIC_SITE_URL: z.string().url().default('http://localhost:3000'),
-        NEXT_PUBLIC_SUPABASE_URL: z.string(),
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string(),
         NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
         NEXT_PUBLIC_POSTHOG_HOST: z.string().optional(),
         NEXT_PUBLIC_GLEAP_API_KEY: z.string().optional(),
         NEXT_PUBLIC_FEATURE_COLLABORATION: z.boolean().default(false),
-        NEXT_PUBLIC_HOSTING_DOMAIN: z.string().optional(),
         NEXT_PUBLIC_RB2B_ID: z.string().optional(),
     },
 
@@ -80,15 +66,10 @@ export const env = createEnv({
      */
     runtimeEnv: {
         NODE_ENV: process.env.NODE_ENV,
-        CSB_API_KEY: process.env.CSB_API_KEY,
-        RESEND_API_KEY: process.env.RESEND_API_KEY,
         NEXT_PUBLIC_FEATURE_COLLABORATION: process.env.NEXT_PUBLIC_FEATURE_COLLABORATION,
 
-        // Supabase
-        SUPABASE_DATABASE_URL: process.env.SUPABASE_DATABASE_URL,
-        NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
-        NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        // Local storage
+        ONLOOK_PROJECTS_DIR: process.env.ONLOOK_PROJECTS_DIR,
 
         // Posthog
         NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
@@ -98,13 +79,8 @@ export const env = createEnv({
         // RB2B
         NEXT_PUBLIC_RB2B_ID: process.env.NEXT_PUBLIC_RB2B_ID,
 
-        // Hosting
-        FREESTYLE_API_KEY: process.env.FREESTYLE_API_KEY,
-        NEXT_PUBLIC_HOSTING_DOMAIN: process.env.NEXT_PUBLIC_HOSTING_DOMAIN,
-
-        // Stripe
-        STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-        STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+        // Site URL
+        NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
 
         // Apply models
         MORPH_API_KEY: process.env.MORPH_API_KEY,
@@ -126,15 +102,9 @@ export const env = createEnv({
         OPENAI_API_KEY: process.env.OPENAI_API_KEY,
         OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
 
-        // n8n
-        N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL,
-        N8N_API_KEY: process.env.N8N_API_KEY,
-
-        // Firecrawl
-        FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY,
-
-        // Exa
-        EXA_API_KEY: process.env.EXA_API_KEY,
+        // Cursor integration
+        CURSOR_API_KEY: process.env.CURSOR_API_KEY,
+        CURSOR_PLATFORM_ENABLED: process.env.CURSOR_PLATFORM_ENABLED,
 
         // Langfuse
         LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,

@@ -1,0 +1,174 @@
+# Onlook Transformation Progress
+
+## Project Overview
+Transforming Onlook from a cloud-based design tool with Supabase authentication into a local-first AI code editor with Cursor integration.
+
+## ✅ COMPLETED TRANSFORMATIONS
+
+### 1. Authentication & Database Removal
+- ❌ Removed all Supabase authentication (login, signup, auth middleware)
+- ❌ Deleted Supabase client/server utilities
+- ❌ Removed auth context, login actions, and auth-related pages
+- ❌ Updated tRPC to remove user authentication requirements
+- ❌ Deleted entire backend Supabase setup
+
+### 2. Local Storage Implementation
+- ✅ Created LocalStorage class in `packages/db/src/local-storage.ts`
+- ✅ All projects now save to `onlook-projects/` folder
+- ✅ Filesystem-based project management with JSON metadata
+- ✅ Support for canvases, conversations, and file operations
+- ✅ Updated database client to use local storage instead of PostgreSQL
+
+### 3. Docker Dependencies Removed
+- ❌ Deleted all Dockerfiles and docker-compose.yml
+- ❌ Removed Docker scripts from package.json
+- ❌ Updated commands to use npm instead of bun
+
+### 4. Sandbox/Hosting Providers Replaced
+- ❌ Removed CodeSandboxSDK and Freestyle integrations
+- ✅ Created LocalProvider for free local sandboxing
+- ✅ Updated code provider to use local development servers
+- ✅ Removed all paid hosting dependencies
+
+### 5. Cursor AI Integration
+- ✅ Created CursorEditor component with Cursor-inspired interface
+- ✅ Built CursorProvider for AI integration
+- ✅ Support for custom API keys (Claude, OpenAI, Google)
+- ✅ Fallback to Cursor platform subscription
+- ✅ Chat interface with code generation capabilities
+
+### 6. Environment Configuration Updated
+- ✅ Removed all Supabase environment variables
+- ✅ Added local storage configuration
+- ✅ Added Cursor API configuration
+- ✅ Created comprehensive setup documentation
+
+## 🔧 TECHNICAL CHANGES MADE
+
+### Files Created/Modified:
+- `packages/db/src/local-storage.ts` - Local storage system
+- `packages/code-provider/src/providers/local/index.ts` - Local sandbox provider
+- `packages/ai/src/cursor/cursor-provider.ts` - Cursor AI integration
+- `apps/web/client/src/components/cursor-editor/index.tsx` - Main editor component
+- `apps/web/client/src/server/api/routers/project/project-local.ts` - Local project router
+- `apps/web/client/src/app/page.tsx` - Updated main page
+- `apps/web/client/src/app/layout.tsx` - Removed auth dependencies
+- `apps/web/client/src/env.ts` - Updated environment variables
+- `SETUP.md` - Comprehensive setup guide
+
+### Files Deleted:
+- All Supabase utilities (`apps/web/client/src/utils/supabase/`)
+- Auth-related pages (`apps/web/client/src/app/auth/`, `apps/web/client/src/app/login/`)
+- Docker files (`Dockerfile`, `docker-compose.yml`)
+- Backend directory (`apps/backend/`)
+- Domain router (`apps/web/client/src/server/api/routers/domain/`)
+
+## 🚧 CURRENT ISSUES
+
+### 1. Package Dependencies
+- **Problem**: Local packages (@onlook/*) are not published to npm
+- **Error**: `404 Not Found - GET https://registry.npmjs.org/@onlook%2fcode-provider`
+- **Status**: Blocking installation
+
+### 2. React Version Conflicts
+- **Problem**: `use-resize-observer@9.1.0` requires React 16.8.0-18, but we have React 19
+- **Error**: `peer react@"16.8.0 - 18" from use-resize-observer@9.1.0`
+- **Status**: Can be resolved with --legacy-peer-deps
+
+## 🎯 NEXT STEPS TO COMPLETE
+
+### 1. Fix Package Dependencies (HIGH PRIORITY)
+- **Option A**: Install packages individually in dependency order
+- **Option B**: Create minimal package.json without local dependencies
+- **Option C**: Use npm link to link local packages
+
+### 2. Resolve React Version Conflicts
+- Update `use-resize-observer` to a React 19 compatible version
+- Or use `--legacy-peer-deps` flag during installation
+
+### 3. Test Local Storage
+- Verify `onlook-projects` folder creation
+- Test project creation and file operations
+- Ensure data persistence works correctly
+
+### 4. Test AI Integration
+- Test Cursor provider with custom API keys
+- Verify fallback responses work
+- Test chat interface functionality
+
+### 5. Test Local Sandboxing
+- Verify local development server starts
+- Test file operations in sandbox
+- Ensure port conflicts are handled
+
+## 🚀 HOW TO START THE APP (Once Dependencies Fixed)
+
+1. **Install Dependencies**:
+   ```bash
+   cd /Users/cameronmcallister/Github/onlook-dev
+   npm install --legacy-peer-deps
+   ```
+
+2. **Create Environment File**:
+   ```bash
+   echo 'NODE_ENV=development
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
+   ONLOOK_PROJECTS_DIR=./onlook-projects' > apps/web/client/.env.local
+   ```
+
+3. **Start Development Server**:
+   ```bash
+   npm run dev
+   ```
+
+4. **Open Browser**: Navigate to `http://localhost:3000`
+
+## 📁 PROJECT STRUCTURE
+
+```
+onlook-projects/          # Local project storage
+├── project-id-1/
+│   ├── meta.json        # Project metadata
+│   ├── canvases/        # Canvas definitions
+│   ├── conversations/   # Chat conversations
+│   └── files/          # Project files
+└── project-id-2/
+    └── ...
+```
+
+## 🎨 FEATURES IMPLEMENTED
+
+- **🚀 Instant Start**: No authentication required
+- **💾 Local Storage**: All projects saved locally
+- **🤖 AI-Powered**: Cursor-inspired interface with AI chat
+- **🆓 Completely Free**: No paid services
+- **🔧 Custom API Keys**: Support for Claude, OpenAI, Google
+- **📁 File Management**: Full project file system
+- **💬 AI Chat**: Interactive code assistance
+
+## 🔍 DEBUGGING NOTES
+
+- **Package Manager**: Switched from bun to npm due to availability
+- **Workspaces**: Simplified to avoid complex dependency resolution
+- **Environment**: Created `.env.local` for local development
+- **TypeScript**: All type definitions should be preserved
+
+## 📝 NOTES FOR NEXT SESSION
+
+1. **Priority**: Fix package dependency issues first
+2. **Approach**: Consider creating a minimal working version without local packages
+3. **Testing**: Focus on core functionality (local storage + AI chat)
+4. **Documentation**: Update README with working setup instructions
+
+## 🎯 SUCCESS CRITERIA
+
+- [ ] App starts without errors
+- [ ] Projects can be created and saved locally
+- [ ] AI chat interface works
+- [ ] Code editor functions properly
+- [ ] File operations work in sandbox
+- [ ] No external dependencies required
+
+---
+Last Updated: September 19, 2024
+Status: 90% Complete - Blocked on package dependencies

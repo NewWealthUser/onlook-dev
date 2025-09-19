@@ -1,7 +1,9 @@
 import { CodeProvider } from './providers';
+import { LocalProvider, type LocalProviderOptions } from './providers/local';
 import { CodesandboxProvider, type CodesandboxProviderOptions } from './providers/codesandbox';
 import { NodeFsProvider, type NodeFsProviderOptions } from './providers/nodefs';
 export * from './providers';
+export { LocalProvider } from './providers/local';
 export { CodesandboxProvider } from './providers/codesandbox';
 export { NodeFsProvider } from './providers/nodefs';
 export * from './types';
@@ -25,7 +27,11 @@ export async function createCodeProviderClient(
 
 export async function getStaticCodeProvider(
     codeProvider: CodeProvider,
-): Promise<typeof CodesandboxProvider | typeof NodeFsProvider> {
+): Promise<typeof LocalProvider | typeof CodesandboxProvider | typeof NodeFsProvider> {
+    if (codeProvider === CodeProvider.Local) {
+        return LocalProvider;
+    }
+
     if (codeProvider === CodeProvider.CodeSandbox) {
         return CodesandboxProvider;
     }
@@ -37,11 +43,19 @@ export async function getStaticCodeProvider(
 }
 
 export interface ProviderInstanceOptions {
+    local?: LocalProviderOptions;
     codesandbox?: CodesandboxProviderOptions;
     nodefs?: NodeFsProviderOptions;
 }
 
 function newProviderInstance(codeProvider: CodeProvider, providerOptions: ProviderInstanceOptions) {
+    if (codeProvider === CodeProvider.Local) {
+        if (!providerOptions.local) {
+            throw new Error('Local provider options are required.');
+        }
+        return new LocalProvider(providerOptions.local);
+    }
+
     if (codeProvider === CodeProvider.CodeSandbox) {
         if (!providerOptions.codesandbox) {
             throw new Error('Codesandbox provider options are required.');

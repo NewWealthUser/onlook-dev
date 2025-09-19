@@ -11,35 +11,16 @@
     },
     "workspaces": [
         "packages/*",
-        "apps/*",
-        "tooling/*",
-        "apps/web/*",
-        "docs"
+        "apps/web/client"
     ],
     "scripts": {
-        "build": "bun --filter @onlook/web build:client",
-        "start": "bun --filter @onlook/web start:client",
-        "dev": "bun --elide-lines=0 --filter @onlook/web dev",
-        "test": "bun --elide-lines=0 --filter '*' test",
-        "docs": "bun --filter @onlook/docs dev",
-        "backend:start": "bun --filter @onlook/backend start",
-        "db:gen": "bun --filter @onlook/db db:gen",
-        "db:push": "cd packages/db && bun db:push",
-        "db:seed": "cd packages/db && bun db:seed",
-        "db:migrate": "cd packages/db && bun db:migrate",
-        "db:reset": "cd apps/backend && bun run reset",
-        "format": "bun --filter '*' format",
-        "lint": "bun --filter @onlook/web-client lint",
-        "typecheck": "cd apps/web/client && bun run typecheck",
+        "dev": "cd apps/web/client && npm run dev",
+        "build": "cd apps/web/client && npm run build",
+        "start": "cd apps/web/client && npm run start",
+        "typecheck": "cd apps/web/client && npm run typecheck",
+        "lint": "cd apps/web/client && npm run lint",
         "prepare": "husky",
-        "clean": "git clean -xdf node_modules",
-        "clean:workspaces": "bun --filter '*' clean",
-        "setup:env": "cd packages/scripts && bun run start",
-        "docker:build": "docker compose build",
-        "docker:up": "docker compose up -d",
-        "docker:down": "docker compose down",
-        "docker:logs": "docker compose logs -f",
-        "docker:restart": "docker compose down && docker compose up -d --build"
+        "clean": "git clean -xdf node_modules"
     },
     "repository": {
         "type": "git",
@@ -50,6 +31,5 @@
     },
     "devDependencies": {
         "husky": "^9.1.6"
-    },
-    "packageManager": "bun@1.2.21"
+    }
 }

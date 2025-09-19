@@ -10,10 +10,6 @@
         "dev:preload": "bun --filter @onlook/web-preload dev",
         "build:client": "bun --filter @onlook/web-client build",
         "start:client": "bun --filter @onlook/web-client start",
-        "docker:up": "docker compose up",
-        "docker:build": "docker compose build",
-        "docker:down": "docker compose down",
-        "docker:restart": "docker compose down && docker compose up"
     },
     "devDependencies": {
         "@types/bun": "latest"

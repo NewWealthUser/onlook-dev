@@ -1,3 +1,7 @@
 #!/usr/bin/env sh
-bun run format && git add .
-# bun run lint && bun run format:write && git add .
+
+if command -v bun >/dev/null 2>&1; then
+  bun run format && git add .
+else
+  echo "husky: bun not found in PATH, skipping formatting step. Install Bun from https://bun.sh to re-enable auto-formatting." >&2
+fi
