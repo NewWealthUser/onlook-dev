@@ -1,5 +1,7 @@
 import { createTRPCRouter, protectedProcedure } from '@/server/api/trpc';
+import { DefaultDesktopFrame, DefaultMobileFrame } from '@onlook/db';
 import { localStorage } from '@onlook/db/src/local-storage';
+import { DefaultSettings } from '@onlook/constants';
 import { z } from 'zod';
 
 export const projectRouter = createTRPCRouter({
@@ -33,10 +35,53 @@ export const projectRouter = createTRPCRouter({
             });
 
             // Create default canvas
-            await localStorage.createCanvas({
+            const canvas = await localStorage.createCanvas({
                 projectId: project.id,
                 name: 'Main Canvas',
             });
+
+            const branches = await localStorage.listBranches(project.id);
+            const defaultBranch = branches.find(branch => branch.isDefault) ?? branches[0];
+
+            if (defaultBranch) {
+                const desktopPosition = {
+                    x: Number(DefaultDesktopFrame.x),
+                    y: Number(DefaultDesktopFrame.y),
+                };
+                const desktopDimension = {
+                    width: Number(DefaultDesktopFrame.width),
+                    height: Number(DefaultDesktopFrame.height),
+                };
+
+                await localStorage.createFrame({
+                    projectId: project.id,
+                    canvasId: canvas.id,
+                    branchId: defaultBranch.id,
+                    name: 'Desktop',
+                    position: desktopPosition,
+                    dimension: desktopDimension,
+                    url: DefaultSettings.URL,
+                });
+
+                const mobilePosition = {
+                    x: Number(DefaultMobileFrame.x),
+                    y: Number(DefaultMobileFrame.y),
+                };
+                const mobileDimension = {
+                    width: Number(DefaultMobileFrame.width),
+                    height: Number(DefaultMobileFrame.height),
+                };
+
+                await localStorage.createFrame({
+                    projectId: project.id,
+                    canvasId: canvas.id,
+                    branchId: defaultBranch.id,
+                    name: 'Mobile',
+                    position: mobilePosition,
+                    dimension: mobileDimension,
+                    url: DefaultSettings.URL,
+                });
+            }
 
             // Create default conversation
             await localStorage.createConversation({

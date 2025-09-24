@@ -23,8 +23,9 @@ export class StateManager {
     brandTab: BrandTabValue | null = null;
     branchTab: BranchTabValue | null = null;
     manageBranchId: string | null = null;
-    
+
     chatMode: ChatType = ChatType.EDIT;
+    restrictToSelection = false;
 
     constructor() {
         makeAutoObservable(this);
@@ -52,6 +53,11 @@ export class StateManager {
         this.publishOpen = false;
         this.branchTab = null;
         this.manageBranchId = null;
+        this.restrictToSelection = false;
         this.resetCanvasScrollingDebounced.cancel();
+    }
+
+    toggleRestrictToSelection() {
+        this.restrictToSelection = !this.restrictToSelection;
     }
 }

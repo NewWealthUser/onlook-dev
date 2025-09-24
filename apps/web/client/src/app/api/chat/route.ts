@@ -130,6 +130,7 @@ export const streamResponse = async (req: NextRequest, userId: string) => {
                         .map(msg => toDbMessage(msg, conversationId));
 
                     await api.chat.message.replaceConversationMessages({
+                        projectId,
                         conversationId,
                         messages: messagesToStore,
                     });

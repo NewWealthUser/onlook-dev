@@ -1,16 +1,39 @@
-import {
-    canvases,
-    createDefaultUserCanvas,
-    projects,
-    fromDbCanvas,
-    fromDbFrame,
-    userCanvases,
-    userCanvasUpdateSchema,
-    type UserCanvas
-} from '@onlook/db';
-import { and, eq } from 'drizzle-orm';
+import { localStorage, type LocalCanvas, type LocalFrame } from '@onlook/db/src/local-storage';
+import type { Canvas, Frame } from '@onlook/models';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
+
+const LOCAL_USER_ID = 'local-user';
+
+const toCanvas = (canvas: LocalCanvas): Canvas => ({
+    id: canvas.id,
+    scale: canvas.state.scale,
+    position: canvas.state.position,
+    userId: LOCAL_USER_ID,
+});
+
+const toFrame = (frame: LocalFrame): Frame => ({
+    id: frame.id,
+    branchId: frame.branchId,
+    canvasId: frame.canvasId,
+    url: frame.url,
+    position: frame.position,
+    dimension: frame.dimension,
+});
+
+const canvasUpdateSchema = z.object({
+    scale: z.union([z.string(), z.number()]),
+    x: z.union([z.string(), z.number()]),
+    y: z.union([z.string(), z.number()]),
+});
+
+const toNumber = (value: string | number): number => {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid numeric value: ${value}`);
+    }
+    return parsed;
+};
 
 export const userCanvasRouter = createTRPCRouter({
     get: protectedProcedure
@@ -19,21 +42,15 @@ export const userCanvasRouter = createTRPCRouter({
                 projectId: z.string(),
             }),
         )
-        .query(async ({ ctx, input }) => {
-            const userCanvas = await ctx.db.query.userCanvases.findFirst({
-                where: and(
-                    eq(canvases.projectId, input.projectId),
-                    eq(userCanvases.userId, ctx.user.id),
-                ),
-                with: {
-                    canvas: true,
-                },
-            });
+        .query(async ({ input }) => {
+            const canvases = await localStorage.listCanvases(input.projectId);
+            const canvas = canvases[0];
 
-            if (!userCanvas) {
-                throw new Error('User canvas not found');
+            if (!canvas) {
+                return null;
             }
-            return fromDbCanvas(userCanvas);
+
+            return toCanvas(canvas);
         }),
     getWithFrames: protectedProcedure
         .input(
@@ -41,45 +58,36 @@ export const userCanvasRouter = createTRPCRouter({
                 projectId: z.string(),
             }),
         )
-        .query(async ({ ctx, input }) => {
-            const dbCanvas = await ctx.db.query.canvases.findFirst({
-                where: eq(canvases.projectId, input.projectId),
-                with: {
-                    frames: true,
-                    userCanvases: {
-                        where: eq(userCanvases.userId, ctx.user.id),
-                    },
-                },
-            });
-            if (!dbCanvas) {
+        .query(async ({ input }) => {
+            const canvases = await localStorage.listCanvases(input.projectId);
+            const canvas = canvases[0];
+
+            if (!canvas) {
                 return null;
             }
-            const userCanvas: UserCanvas = dbCanvas.userCanvases[0] ?? createDefaultUserCanvas(ctx.user.id, dbCanvas.id);
+
             return {
-                userCanvas: fromDbCanvas(userCanvas),
-                frames: dbCanvas.frames.map(fromDbFrame),
+                userCanvas: toCanvas(canvas),
+                frames: canvas.frames.map(toFrame),
             };
         }),
     update: protectedProcedure.input(
         z.object({
             projectId: z.string(),
             canvasId: z.string(),
-            canvas: userCanvasUpdateSchema,
-        })).mutation(async ({ ctx, input }) => {
+            canvas: canvasUpdateSchema,
+        })).mutation(async ({ input }) => {
             try {
-                await ctx.db
-                    .update(userCanvases)
-                    .set(input.canvas)
-                    .where(
-                        and(
-                            eq(userCanvases.canvasId, input.canvasId),
-                            eq(userCanvases.userId, ctx.user.id),
-                        ),
-                    );
-                await ctx.db.update(projects).set({
-                    updatedAt: new Date(),
-                }).where(eq(projects.id, input.projectId));
-                return true;
+                const scale = toNumber(input.canvas.scale);
+                const x = toNumber(input.canvas.x);
+                const y = toNumber(input.canvas.y);
+
+                const updated = await localStorage.updateCanvasState(input.projectId, input.canvasId, {
+                    scale,
+                    position: { x, y },
+                });
+
+                return updated !== null;
             } catch (error) {
                 console.error('Error updating user canvas', error);
                 return false;

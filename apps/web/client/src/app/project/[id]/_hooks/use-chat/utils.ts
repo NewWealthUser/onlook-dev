@@ -35,7 +35,12 @@ export const getUserChatMessageFromString = (
 }
 
 
-export const attachCommitToUserMessage = (commit: GitCommit, message: ChatMessage, conversationId: string) => {
+export const attachCommitToUserMessage = (
+    commit: GitCommit,
+    message: ChatMessage,
+    projectId: string,
+    conversationId: string,
+) => {
     // Vercel converts createdAt to a string, which our API doesn't accept.
     const oldCheckpoints = message.metadata?.checkpoints.map((checkpoint) => ({
         ...checkpoint,
@@ -60,9 +65,11 @@ export const attachCommitToUserMessage = (commit: GitCommit, message: ChatMessag
 
     // Very hacky - but since we only save messages when we submit a new message, we need to update the checkpoints here.
     void api.chat.message.updateCheckpoints.mutate({
+        projectId,
+        conversationId,
         messageId: message.id,
         checkpoints: newCheckpoints,
     });
-    
+
     return message;
 }

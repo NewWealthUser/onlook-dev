@@ -1,11 +1,25 @@
+import { env } from '@/env';
 import { CodeProvider, createCodeProviderClient, getStaticCodeProvider } from '@onlook/code-provider';
 import { getSandboxPreviewUrl } from '@onlook/constants';
 import { shortenUuid } from '@onlook/utility/src/id';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
 
-function getProvider({
+const getProjectsRoot = () => env.ONLOOK_PROJECTS_DIR;
+
+const resolveProjectPath = (sandboxId: string) =>
+    path.join(getProjectsRoot(), sandboxId);
+
+async function ensureProjectsRoot() {
+    const root = getProjectsRoot();
+    await fs.mkdir(root, { recursive: true });
+    return root;
+}
+
+async function getProvider({
     sandboxId,
     userId,
     provider = CodeProvider.Local,
@@ -14,11 +28,13 @@ function getProvider({
     provider?: CodeProvider,
     userId?: undefined | string,
 }) {
+    await ensureProjectsRoot();
+
     if (provider === CodeProvider.Local) {
         return createCodeProviderClient(CodeProvider.Local, {
             providerOptions: {
                 local: {
-                    projectPath: `./onlook-projects/${sandboxId}`,
+                    projectPath: resolveProjectPath(sandboxId),
                     port: 3000 + Math.floor(Math.random() * 1000), // Random port to avoid conflicts
                 },
             },
@@ -162,7 +178,8 @@ export const sandboxRouter = createTRPCRouter({
             try {
                 // Create a local sandbox ID
                 const sandboxId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-                const projectPath = `./onlook-projects/${sandboxId}`;
+                await ensureProjectsRoot();
+                const projectPath = resolveProjectPath(sandboxId);
                 const port = 3000 + Math.floor(Math.random() * 1000);
 
                 // Clone the repository
