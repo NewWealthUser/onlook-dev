@@ -33,7 +33,7 @@
     },
     "dependencies": {
         "@ai-sdk/provider-utils": "^3.0.5",
-        "@ai-sdk/react": "2.0.25",
+        "@ai-sdk/react": "2.0.47",
         "@codemirror/lang-css": "^6.2.0",
         "@codemirror/lang-html": "^6.4.7",
         "@codemirror/lang-javascript": "^6.2.3",
@@ -55,7 +55,7 @@
         "@onlook/ui": "*",
         "@onlook/utility": "*",
         "@opentelemetry/api-logs": "0.57.2",
-        "@opentelemetry/instrumentation": "0.57.2",
+        "@opentelemetry/instrumentation": "0.205.0",
         "@opentelemetry/sdk-logs": "0.57.2",
         "@t3-oss/env-nextjs": "^0.12.0",
         "@tanstack/react-query": "^5.69.0",
@@ -107,7 +107,7 @@
         "tw-animate-css": "^1.2.5",
         "unicornstudio-react": "^1.4.29-1",
         "use-resize-observer": "^9.1.0",
-        "uuid": "^11.1.0",
+        "uuid": "^13.0.0",
         "webfontloader": "^1.6.28",
         "zod": "^4.1.3"
     },
