@@ -56,6 +56,38 @@ results.push({
     note: projectsNote
 });
 
+const envLocalRelativePath = path.join("apps", "web", "client", ".env.local");
+const envLocalPath = path.join(process.cwd(), envLocalRelativePath);
+const envLocalContents = [
+    "NODE_ENV=development",
+    "NEXT_PUBLIC_SITE_URL=http://localhost:3000",
+    "ONLOOK_PROJECTS_DIR=\"$HOME/Onlook Projects\"",
+    ""
+].join("\n");
+
+let envLocalStatus: Status = "pass";
+let envLocalNote = "";
+
+try {
+    await fs.access(envLocalPath, fsConstants.F_OK);
+    envLocalNote = `Found ${envLocalRelativePath}`;
+} catch {
+    try {
+        await fs.writeFile(envLocalPath, envLocalContents, { flag: "wx" });
+        envLocalNote = `Created ${envLocalRelativePath}`;
+    } catch (error) {
+        envLocalStatus = "fail";
+        const message = error instanceof Error ? error.message : String(error);
+        envLocalNote = `Unable to create ${envLocalRelativePath}: ${message}`;
+    }
+}
+
+results.push({
+    label: ".env.local",
+    status: envLocalStatus,
+    note: envLocalNote
+});
+
 const lines: string[] = [
     "# Setup Check",
     "",
