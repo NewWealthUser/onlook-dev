@@ -7,8 +7,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@onlook/ui/tooltip';
 import { cn } from '@onlook/ui/utils';
 import { observer } from 'mobx-react-lite';
 import { motion } from 'motion/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { RestartSandboxButton } from './restart-sandbox-button';
+import { SandboxLogsPanel } from './sandbox-logs-panel';
 import { Terminal } from './terminal';
 
 export const TerminalArea = observer(({ children }: { children: React.ReactNode }) => {
@@ -50,6 +51,21 @@ export const TerminalArea = observer(({ children }: { children: React.ReactNode 
     }
 
     const [terminalHidden, setTerminalHidden] = useState(true);
+    const [logsVisible, setLogsVisible] = useState(false);
+
+    const containerClass = useMemo(() => {
+        const containerVisible = !terminalHidden || logsVisible;
+        if (!containerVisible) {
+            return 'h-0 w-0 invisible';
+        }
+        if (!terminalHidden && logsVisible) {
+            return 'h-[30rem] w-[37rem]';
+        }
+        if (!terminalHidden) {
+            return 'h-[22rem] w-[37rem]';
+        }
+        return 'h-[18rem] w-[37rem]';
+    }, [terminalHidden, logsVisible]);
 
     return (
         <>
@@ -67,6 +83,22 @@ export const TerminalArea = observer(({ children }: { children: React.ReactNode 
                             </button>
                         </TooltipTrigger>
                         <TooltipContent sideOffset={5} hideArrow>Toggle Terminal</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <button
+                                onClick={() => setLogsVisible(!logsVisible)}
+                                className={cn(
+                                    'h-9 w-9 flex items-center justify-center rounded-md border border-transparent transition-colors',
+                                    logsVisible
+                                        ? 'text-foreground hover:text-foreground-hover bg-accent/40'
+                                        : 'hover:text-foreground-hover text-foreground-tertiary hover:bg-accent/50'
+                                )}
+                            >
+                                <Icons.Clipboard />
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent sideOffset={5} hideArrow>Toggle Logs</TooltipContent>
                     </Tooltip>
                 </motion.div>
             ) : (
@@ -89,6 +121,22 @@ export const TerminalArea = observer(({ children }: { children: React.ReactNode 
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <button
+                                    onClick={() => setLogsVisible(!logsVisible)}
+                                    className={cn(
+                                        'h-9 w-9 flex items-center justify-center rounded-md border border-transparent transition-colors',
+                                        logsVisible
+                                            ? 'text-foreground hover:text-foreground-hover bg-accent/40'
+                                            : 'hover:text-foreground-hover text-foreground-tertiary hover:bg-accent/50'
+                                    )}
+                                >
+                                    <Icons.Clipboard />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent sideOffset={5} hideArrow>Toggle Logs</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
                                     onClick={() => setTerminalHidden(!terminalHidden)}
                                     className="h-9 w-9 flex items-center justify-center hover:text-foreground-hover text-foreground-tertiary hover:bg-accent/50 rounded-md border border-transparent"
                                 >
@@ -102,48 +150,54 @@ export const TerminalArea = observer(({ children }: { children: React.ReactNode 
             )}
             <div
                 className={cn(
-                    'bg-background rounded-lg transition-all duration-300 flex flex-col items-center justify-between h-full overflow-auto',
-                    terminalHidden ? 'h-0 w-0 invisible' : 'h-[22rem] w-[37rem]',
+                    'bg-background rounded-lg transition-all duration-300 flex flex-col items-center justify-between h-full overflow-hidden',
+                    containerClass,
                 )}
             >
-                {allTerminalSessions.size > 0 ? (
-                    <Tabs defaultValue={'cli'} value={activeSessionId || ''} onValueChange={(value) => {
-                        // Extract branch and session from the combined key
-                        const terminalData = allTerminalSessions.get(value);
-                        if (terminalData) {
-                            // Switch to the branch first
-                            editorEngine.branches.switchToBranch(terminalData.branchId);
-                            // Then set the active terminal session for that branch
-                            const sandbox = branches.getSandboxById(terminalData.branchId);
-                            if (sandbox) {
-                                sandbox.session.activeTerminalSessionId = terminalData.sessionId;
-                            }
-                        }
-                    }}
-                        className="w-full h-full">
-                        <TabsList className="w-full h-8 rounded-none border-b border-border overflow-x-auto justify-start">
-                            {Array.from(allTerminalSessions).map(([key, terminalData]) => (
-                                <TabsTrigger key={key} value={key} className="flex-1">
-                                    <span className="truncate">
-                                        {terminalData.name} • {terminalData.branchName}
-                                    </span>
-                                </TabsTrigger>
-                            ))}
-                        </TabsList>
-                        <div className="w-full h-full overflow-auto">
-                            {Array.from(allTerminalSessions).map(([key, terminalData]) => (
-                                <TabsContent key={key} forceMount value={key} className="h-full" hidden={activeSessionId !== key}>
-                                    <Terminal hidden={terminalHidden} terminalSessionId={terminalData.sessionId} branchId={terminalData.branchId} />
-                                </TabsContent>
-                            ))}
-                        </div>
-                    </Tabs>
-                ) : (
-                    <div className="flex items-center justify-center h-full text-muted-foreground">
-                        <span className="text-sm">No terminal sessions available</span>
-                    </div>
-                )}
-            </div >
+                <div className="flex h-full w-full flex-col gap-2 p-2">
+                    {!terminalHidden ? (
+                        allTerminalSessions.size > 0 ? (
+                            <Tabs
+                                defaultValue={'cli'}
+                                value={activeSessionId || ''}
+                                onValueChange={(value) => {
+                                    const terminalData = allTerminalSessions.get(value);
+                                    if (terminalData) {
+                                        editorEngine.branches.switchToBranch(terminalData.branchId);
+                                        const sandbox = branches.getSandboxById(terminalData.branchId);
+                                        if (sandbox) {
+                                            sandbox.session.activeTerminalSessionId = terminalData.sessionId;
+                                        }
+                                    }
+                                }}
+                                className="w-full flex-1"
+                            >
+                                <TabsList className="w-full h-8 rounded-none border-b border-border overflow-x-auto justify-start">
+                                    {Array.from(allTerminalSessions).map(([key, terminalData]) => (
+                                        <TabsTrigger key={key} value={key} className="flex-1">
+                                            <span className="truncate">
+                                                {terminalData.name} • {terminalData.branchName}
+                                            </span>
+                                        </TabsTrigger>
+                                    ))}
+                                </TabsList>
+                                <div className="w-full flex-1 overflow-auto">
+                                    {Array.from(allTerminalSessions).map(([key, terminalData]) => (
+                                        <TabsContent key={key} forceMount value={key} className="h-full" hidden={activeSessionId !== key}>
+                                            <Terminal hidden={terminalHidden} terminalSessionId={terminalData.sessionId} branchId={terminalData.branchId} />
+                                        </TabsContent>
+                                    ))}
+                                </div>
+                            </Tabs>
+                        ) : (
+                            <div className="flex flex-1 items-center justify-center text-muted-foreground">
+                                <span className="text-sm">No terminal sessions available</span>
+                            </div>
+                        )
+                    ) : null}
+                    <SandboxLogsPanel hidden={!logsVisible} />
+                </div>
+            </div>
         </>
     );
 });

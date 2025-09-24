@@ -139,7 +139,11 @@ export const ProjectCreationProvider = ({
                         initClient: true,
                         keepActiveWhileConnected: false,
                         getSession: async (sandboxId) => {
-                            return startSandbox({ sandboxId });
+                            const result = await startSandbox({ sandboxId });
+                            if (result.provider !== CodeProvider.CodeSandbox) {
+                                throw new Error('Expected CodeSandbox provider when importing project');
+                            }
+                            return result.session;
                         },
                     },
                 },
