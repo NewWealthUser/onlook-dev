@@ -45,6 +45,7 @@ export const ChatInput = observer(({
     const [actionTooltipOpen, setActionTooltipOpen] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const chatMode = editorEngine.state.chatMode;
+    const restrictToSelection = editorEngine.state.restrictToSelection;
     const [inputValue, setInputValue] = useState('');
 
     const focusInput = () => {
@@ -93,8 +94,12 @@ export const ChatInput = observer(({
         return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
     }, []);
 
-    const disabled = isStreaming
+    const disabled = isStreaming;
     const inputEmpty = !inputValue || inputValue.trim().length === 0;
+
+    const toggleRestrictToSelection = () => {
+        editorEngine.state.toggleRestrictToSelection();
+    };
 
     function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
         if (isComposing) {
@@ -393,6 +398,34 @@ export const ChatInput = observer(({
                         onChatModeChange={handleChatModeChange}
                         disabled={disabled}
                     />
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant={restrictToSelection ? 'secondary' : 'ghost'}
+                                size={'icon'}
+                                className={cn(
+                                    'p-2 w-fit h-fit hover:bg-background-onlook cursor-pointer transition-colors',
+                                    restrictToSelection && 'text-primary',
+                                )}
+                                disabled={disabled}
+                                onClick={toggleRestrictToSelection}
+                                aria-pressed={restrictToSelection}
+                                aria-label={
+                                    restrictToSelection
+                                        ? 'Disable restrict edits to selection'
+                                        : 'Enable restrict edits to selection'
+                                }
+                            >
+                                <Icons.Corners className="h-4 w-4" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="start" className="max-w-xs text-left">
+                            <p className="font-normal">
+                                Restrict edits to selection. Only highlighted code or your active file will be sent to the
+                                model, which helps save tokens on large requests.
+                            </p>
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
                 <div className="flex flex-row items-center gap-1.5">
                     <ActionButtons
