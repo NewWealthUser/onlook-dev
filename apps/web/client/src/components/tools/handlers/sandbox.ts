@@ -1,7 +1,6 @@
 import type { EditorEngine } from '@/components/store/editor/engine';
-import {
-    SANDBOX_TOOL_PARAMETERS
-} from '@onlook/ai';
+import { SANDBOX_TOOL_PARAMETERS } from '@onlook/ai';
+import type { LocalSandboxLogEntry } from '@onlook/code-provider';
 import { z } from 'zod';
 
 export async function handleSandboxTool(args: z.infer<typeof SANDBOX_TOOL_PARAMETERS>, editorEngine: EditorEngine): Promise<string> {
@@ -20,6 +19,14 @@ export async function handleSandboxTool(args: z.infer<typeof SANDBOX_TOOL_PARAME
             }
         } else if (args.command === 'read_dev_server_logs') {
             const logs = await sandbox.session.readDevServerLogs();
+            if (Array.isArray(logs)) {
+                return logs
+                    .map((entry: LocalSandboxLogEntry) => {
+                        const timestamp = entry.timestamp.toISOString();
+                        return `[${timestamp}] [${entry.level.toUpperCase()}] ${entry.message}`;
+                    })
+                    .join('\n');
+            }
             return logs;
         } else {
             throw new Error('Invalid command');

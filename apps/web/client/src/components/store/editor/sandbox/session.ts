@@ -1,5 +1,13 @@
 import { api } from '@/trpc/client';
-import { CodeProvider, createCodeProviderClient, type Provider } from '@onlook/code-provider';
+import {
+    CodeProvider,
+    LocalProvider,
+    createCodeProviderClient,
+    type LocalCreateSessionOutput,
+    type LocalSandboxLogEntry,
+    type LocalSandboxLogLevel,
+    type Provider,
+} from '@onlook/code-provider';
 import type { Branch } from '@onlook/models';
 import { makeAutoObservable } from 'mobx';
 import type { ErrorManager } from '../error';
@@ -10,6 +18,7 @@ export class SessionManager {
     isConnecting = false;
     terminalSessions = new Map<string, CLISession>();
     activeTerminalSessionId = 'cli';
+    private providerType: CodeProvider | null = null;
 
     constructor(
         private readonly branch: Branch,
@@ -26,22 +35,71 @@ export class SessionManager {
         this.isConnecting = true;
 
         try {
-            this.provider = await createCodeProviderClient(CodeProvider.CodeSandbox, {
-                providerOptions: {
-                    codesandbox: {
-                        sandboxId,
-                        userId,
-                        initClient: true,
-                        getSession: async (sandboxId, userId) => {
-                            return api.sandbox.start.mutate({ sandboxId });
+            const startResult = await api.sandbox.start.mutate({ sandboxId });
+            this.providerType = startResult.provider;
+
+            if (startResult.provider === CodeProvider.Local) {
+                const initialSession = startResult.session as LocalCreateSessionOutput;
+                const sessionCache = new Map<string, LocalCreateSessionOutput>();
+                sessionCache.set(sandboxId, initialSession);
+
+                const resolveLocalSession = async (id: string) => {
+                    const cached = sessionCache.get(id);
+                    if (cached) {
+                        return cached;
+                    }
+                    const followUp = await api.sandbox.start.mutate({ sandboxId: id });
+                    if (followUp.provider !== CodeProvider.Local) {
+                        throw new Error('Expected local sandbox provider');
+                    }
+                    const session = followUp.session as LocalCreateSessionOutput;
+                    sessionCache.set(id, session);
+                    return session;
+                };
+
+                this.provider = await createCodeProviderClient(CodeProvider.Local, {
+                    providerOptions: {
+                        local: {
+                            sandboxId,
+                            projectPath: initialSession.projectPath,
+                            preferredPort: initialSession.port,
+                            getSession: resolveLocalSession,
                         },
                     },
-                },
-            });
+                });
+            } else {
+                let pendingRemoteSession: any = startResult.session;
+
+                const resolveRemoteSession = async (id: string) => {
+                    if (pendingRemoteSession && id === sandboxId) {
+                        const session = pendingRemoteSession;
+                        pendingRemoteSession = null;
+                        return session;
+                    }
+                    const followUp = await api.sandbox.start.mutate({ sandboxId: id });
+                    if (followUp.provider !== CodeProvider.CodeSandbox) {
+                        throw new Error('Expected CodeSandbox provider');
+                    }
+                    return followUp.session;
+                };
+
+                this.provider = await createCodeProviderClient(CodeProvider.CodeSandbox, {
+                    providerOptions: {
+                        codesandbox: {
+                            sandboxId,
+                            userId,
+                            initClient: true,
+                            keepActiveWhileConnected: false,
+                            getSession: async (id) => resolveRemoteSession(id),
+                        },
+                    },
+                });
+            }
             await this.createTerminalSessions(this.provider);
         } catch (error) {
             console.error('Failed to start sandbox session:', error);
             this.provider = null;
+            this.providerType = null;
             throw error;
         } finally {
             this.isConnecting = false;
@@ -65,12 +123,27 @@ export class SessionManager {
         return false;
     }
 
-    async readDevServerLogs(): Promise<string> {
-        const result = await this.provider?.getTask({ args: { id: 'dev' } });
-        if (result) {
-            return await result.task.open();
+    async readDevServerLogs(
+        level: LocalSandboxLogLevel | 'all' = 'all',
+    ): Promise<string | LocalSandboxLogEntry[]> {
+        if (!this.provider) {
+            return 'Dev server not found';
         }
-        return 'Dev server not found';
+        if (this.providerType === CodeProvider.Local && this.provider instanceof LocalProvider) {
+            return this.provider.getDevServerLogs(level);
+        }
+        const result = await this.provider.getTask({ args: { id: 'dev' } });
+        return await result.task.open();
+    }
+
+    subscribeToDevServerLogs(
+        level: LocalSandboxLogLevel | 'all',
+        callback: (entry: LocalSandboxLogEntry) => void,
+    ): () => void {
+        if (this.providerType === CodeProvider.Local && this.provider instanceof LocalProvider) {
+            return this.provider.subscribeToDevServerLogs(callback, level);
+        }
+        return () => { };
     }
 
     getTerminalSession(id: string) {
@@ -211,6 +284,7 @@ export class SessionManager {
             await this.provider.destroy();
         }
         this.provider = null;
+        this.providerType = null;
         this.isConnecting = false;
         this.terminalSessions.clear();
     }
