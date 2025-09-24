@@ -24,7 +24,31 @@ export interface LocalBrandState {
   fonts: LocalBrandFont[];
   updatedAt: string;
 }
-=======
+import path from 'path';
+import { z } from 'zod';
+import { DefaultSettings } from '@onlook/constants';
+import type { ChatSuggestion } from '@onlook/models';
+
+export interface LocalBrandColor {
+  id: string;
+  value: string;
+  label?: string;
+}
+
+export interface LocalBrandFont {
+  id: string;
+  family: string;
+  files: string[];
+  styles?: string[];
+  weights?: string[];
+  displayName?: string;
+}
+
+export interface LocalBrandState {
+  colors: LocalBrandColor[];
+  fonts: LocalBrandFont[];
+  updatedAt: string;
+}
 import path from 'path';
 import { z } from 'zod';
 import type { ChatSuggestion } from '@onlook/models';
@@ -1219,7 +1243,704 @@ export class LocalStorage {
 
     await this.writeCanvasFile(projectDir, updatedCanvas);
     return updatedCanvas;
-=======
+  }
+
+  async createFrame(
+    frame: Omit<LocalFrame, 'id' | 'createdAt' | 'updatedAt'>
+  ): Promise<LocalFrame> {
+    await this.ensureReady();
+
+    const projectDir = await this.requireProjectDir(frame.projectId);
+    const canvas = await this.getCanvas(frame.projectId, frame.canvasId);
+
+    if (!canvas) {
+      throw new Error(`Canvas ${frame.canvasId} not found for project ${frame.projectId}`);
+    }
+
+    const now = new Date().toISOString();
+    const id = this.generateId();
+    const fullFrame: LocalFrame = {
+      ...frame,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const updatedCanvas: LocalCanvas = {
+      ...canvas,
+      updatedAt: now,
+      frames: [...canvas.frames, fullFrame],
+    };
+
+    await this.writeCanvasFile(projectDir, updatedCanvas);
+
+    return fullFrame;
+  }
+
+  async listFrames(
+    projectId: string,
+    filters: { canvasId?: string; branchId?: string } = {}
+  ): Promise<LocalFrame[]> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return [];
+    }
+
+    if (filters.canvasId) {
+      const canvas = await this.getCanvas(projectId, filters.canvasId);
+      if (!canvas) {
+        return [];
+      }
+
+      return canvas.frames
+        .filter((frame) =>
+          filters.branchId ? frame.branchId === filters.branchId : true
+        )
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    }
+
+    const canvases = await this.listCanvases(projectId);
+    const frames = canvases.flatMap((canvas) => canvas.frames);
+
+    return frames
+      .filter((frame) => (filters.branchId ? frame.branchId === filters.branchId : true))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  async updateFrame(
+    projectId: string,
+    frameId: string,
+    updates: Partial<Omit<LocalFrame, 'id' | 'projectId' | 'createdAt'>>
+  ): Promise<LocalFrame | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const canvases = await this.listCanvases(projectId);
+    for (const canvas of canvases) {
+      const index = canvas.frames.findIndex((frame) => frame.id === frameId);
+      if (index === -1) {
+        continue;
+      }
+
+      const existing = canvas.frames[index]!;
+      const updated: LocalFrame = {
+        ...existing,
+        ...updates,
+        position: updates.position ?? existing.position,
+        dimension: updates.dimension ?? existing.dimension,
+        canvasId: updates.canvasId ?? existing.canvasId,
+        branchId: updates.branchId ?? existing.branchId,
+        url: updates.url ?? existing.url,
+        name: updates.name ?? existing.name,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updatedCanvas: LocalCanvas = {
+        ...canvas,
+        updatedAt: updated.updatedAt,
+        frames: [
+          ...canvas.frames.slice(0, index),
+          updated,
+          ...canvas.frames.slice(index + 1),
+        ],
+      };
+
+      await this.writeCanvasFile(projectDir, updatedCanvas);
+      return updated;
+    }
+
+    return null;
+  }
+
+  async deleteFrame(projectId: string, frameId: string): Promise<boolean> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return false;
+    }
+
+    const canvases = await this.listCanvases(projectId);
+    for (const canvas of canvases) {
+      const index = canvas.frames.findIndex((frame) => frame.id === frameId);
+      if (index === -1) {
+        continue;
+      }
+  }
+
+  private async refreshProjectIndex(): Promise<void> {
+    this.projectDirIndex.clear();
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(this.projectsDir, { withFileTypes: true });
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(this.projectsDir, 'read'));
+      }
+
+      throw new Error(LocalStorage.formatGenericAccessMessage(this.projectsDir, error));
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const projectDir = path.join(this.projectsDir, entry.name);
+      const project = await this.readProjectMeta(projectDir);
+      if (project) {
+        this.projectDirIndex.set(project.id, projectDir);
+      }
+    }
+  }
+
+  private async getProjectDir(projectId: string): Promise<string | null> {
+    const existing = this.projectDirIndex.get(projectId);
+    if (existing) {
+      return existing;
+    }
+
+    await this.refreshProjectIndex();
+    return this.projectDirIndex.get(projectId) ?? null;
+  }
+
+  private async requireProjectDir(projectId: string): Promise<string> {
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      throw new Error(`Project directory not found for id ${projectId}`);
+    }
+    return projectDir;
+  }
+
+  private async ensureProjectStructure(projectDir: string): Promise<void> {
+    await this.ensureAccess(projectDir, {
+      intent: 'write',
+      createIfMissing: true,
+      kind: 'directory',
+    });
+
+    const directories = ['files', 'canvases', 'conversations', 'previews', 'assets', 'branches'];
+    for (const directory of directories) {
+      const target = path.join(projectDir, directory);
+      await this.ensureAccess(target, {
+        intent: 'write',
+        createIfMissing: true,
+        kind: 'directory',
+      });
+    }
+
+    await this.maybeRecommendAssetSymlink(path.join(projectDir, 'assets'));
+  }
+
+  private async maybeRecommendAssetSymlink(assetDir: string): Promise<void> {
+    const resolvedAssetDir = path.resolve(assetDir);
+    if (this.largeAssetHintedProjects.has(resolvedAssetDir)) {
+      return;
+    }
+
+    const thresholdBytes = 200 * 1024 * 1024;
+
+    try {
+      const entries = await fs.readdir(resolvedAssetDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) {
+          continue;
+        }
+
+        const entryPath = path.join(resolvedAssetDir, entry.name);
+        try {
+          const stats = await fs.stat(entryPath);
+          if (stats.size >= thresholdBytes) {
+            this.largeAssetHintedProjects.add(resolvedAssetDir);
+            const sizeInMb = stats.size / (1024 * 1024);
+            console.warn(
+              `[onlook-local-storage] "${entryPath}" is ${sizeInMb.toFixed(
+                1
+              )}MB. Consider symlinking large binaries into the assets folder instead of copying them. See ${LocalStorage.permissionDocLink(
+                'large-assets-and-symlinks'
+              )} for guidance.`
+            );
+            break;
+          }
+        } catch (statError) {
+          if (LocalStorage.isPermissionError(statError)) {
+            throw new Error(LocalStorage.formatPermissionMessage(entryPath, 'read'));
+          }
+        }
+      }
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(resolvedAssetDir, 'read'));
+      }
+      // Ignore missing directories; ensureAccess already created them when needed.
+    }
+  }
+
+  private async getUniqueProjectDir(
+    baseName: string,
+    currentProjectId?: string
+  ): Promise<{ dirName: string; dirPath: string }> {
+    const targetDir = currentProjectId
+      ? await this.getProjectDir(currentProjectId)
+      : null;
+
+    let attempt = 0;
+    let candidateName = baseName;
+
+    while (true) {
+      const candidatePath = path.join(this.projectsDir, candidateName);
+      if (!(await this.pathExists(candidatePath))) {
+        return { dirName: candidateName, dirPath: candidatePath };
+      }
+
+      if (targetDir && path.resolve(candidatePath) === path.resolve(targetDir)) {
+        return { dirName: candidateName, dirPath: candidatePath };
+      }
+
+      attempt += 1;
+      candidateName = `${baseName} (${attempt})`;
+    }
+  }
+
+  // Project operations
+  async createProject(
+    project: Omit<LocalProject, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'brand'>
+  ): Promise<LocalProject> {
+    await this.ensureReady();
+
+    const now = new Date().toISOString();
+    const name = this.normalizeProjectName(project.name);
+    const directoryBase = this.toDirectoryName(name);
+    const { dirPath } = await this.getUniqueProjectDir(directoryBase);
+
+    await this.ensureProjectStructure(dirPath);
+
+    const id = this.generateId();
+    const fullProject: LocalProject = {
+      ...project,
+      name,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      version: LocalStorage.PROJECT_META_VERSION,
+      brand: LocalStorage.defaultBrandState(),
+    };
+
+    await this.writeProjectMeta(dirPath, fullProject);
+
+    this.projectDirIndex.set(id, dirPath);
+
+    await this.ensureDefaultBranch(fullProject, dirPath);
+
+      const updatedCanvas: LocalCanvas = {
+        ...canvas,
+        updatedAt: new Date().toISOString(),
+        frames: [
+          ...canvas.frames.slice(0, index),
+          ...canvas.frames.slice(index + 1),
+        ],
+      };
+
+      await this.writeCanvasFile(projectDir, updatedCanvas);
+      return true;
+    }
+
+    return false;
+  }
+
+  async findFrame(
+    frameId: string
+  ): Promise<{ frame: LocalFrame; canvas: LocalCanvas; projectId: string } | null> {
+  async getProject(projectId: string): Promise<LocalProject | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const project = await this.readProjectMeta(projectDir);
+    if (!project) {
+      return null;
+    }
+
+    await this.ensureProjectStructure(projectDir);
+    return project;
+  }
+
+  async updateProject(
+    projectId: string,
+    updates: Partial<Omit<LocalProject, 'id' | 'createdAt' | 'version'>>
+  ): Promise<LocalProject | null> {
+    await this.ensureReady();
+
+    const project = await this.getProject(projectId);
+    if (!project) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const brandUpdate =
+      'brand' in updates && updates.brand
+        ? {
+            colors: updates.brand.colors ?? project.brand.colors,
+            fonts: updates.brand.fonts ?? project.brand.fonts,
+            updatedAt: new Date().toISOString(),
+          }
+        : project.brand;
+
+    const updatedProject: LocalProject = {
+      ...project,
+      ...updates,
+      brand: brandUpdate,
+      name: updates.name ? this.normalizeProjectName(updates.name) : project.name,
+      updatedAt: now,
+      version: LocalStorage.PROJECT_META_VERSION,
+    };
+
+    const currentDir = await this.requireProjectDir(projectId);
+    const targetDirName = this.toDirectoryName(updatedProject.name);
+    const { dirPath: targetDir } = await this.getUniqueProjectDir(
+      targetDirName,
+      projectId
+    );
+
+    if (path.resolve(currentDir) !== path.resolve(targetDir)) {
+      await this.ensureAccess(path.dirname(targetDir), {
+        intent: 'write',
+        createIfMissing: true,
+        kind: 'directory',
+      });
+
+      try {
+        await fs.rename(currentDir, targetDir);
+      } catch (error) {
+        if (LocalStorage.isPermissionError(error)) {
+          throw new Error(LocalStorage.formatPermissionMessage(targetDir, 'write'));
+        }
+
+        throw new Error(LocalStorage.formatGenericAccessMessage(targetDir, error));
+      }
+      this.projectDirIndex.set(projectId, targetDir);
+    }
+
+    await this.ensureProjectStructure(targetDir);
+    await this.writeProjectMeta(targetDir, updatedProject);
+
+    return updatedProject;
+  }
+
+  async updateBrand(
+    projectId: string,
+    updates: LocalBrandUpdate
+  ): Promise<LocalProject | null> {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const updatedProject: LocalProject = {
+      ...project,
+      brand: {
+        colors: updates.colors ?? project.brand.colors,
+        fonts: updates.fonts ?? project.brand.fonts,
+        updatedAt: now,
+      },
+      updatedAt: now,
+      version: LocalStorage.PROJECT_META_VERSION,
+    };
+
+    const projectDir = await this.requireProjectDir(projectId);
+    await this.writeProjectMeta(projectDir, updatedProject);
+    return updatedProject;
+  }
+
+  private getBranchPath(projectDir: string, branchId: string): string {
+    return path.join(projectDir, 'branches', `${branchId}.json`);
+  }
+
+  private getConversationPath(projectDir: string, conversationId: string): string {
+    return path.join(projectDir, 'conversations', `${conversationId}.json`);
+  }
+
+  private async ensureDefaultBranch(
+    project: LocalProject,
+    projectDir: string
+  ): Promise<void> {
+    const branches = await this.listBranches(project.id);
+    if (branches.length > 0) {
+      return;
+    }
+
+    const defaultBranch: Omit<LocalBranch, 'id' | 'createdAt' | 'updatedAt'> = {
+      projectId: project.id,
+      name: 'main',
+      description: null,
+      isDefault: true,
+      sandboxId: null,
+      sandboxUrl: null,
+    };
+
+    const now = new Date().toISOString();
+    const branch: LocalBranch = {
+      ...defaultBranch,
+      id: this.generateId(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.writeFileSafely(
+      this.getBranchPath(projectDir, branch.id),
+      JSON.stringify(branch, null, 2)
+    );
+  }
+
+  async createBranch(
+    projectId: string,
+    branch: Omit<LocalBranch, 'id' | 'createdAt' | 'updatedAt' | 'projectId'>
+  ): Promise<LocalBranch> {
+    await this.ensureReady();
+
+    const projectDir = await this.requireProjectDir(projectId);
+    await this.ensureAccess(path.join(projectDir, 'branches'), {
+      intent: 'write',
+      createIfMissing: true,
+      kind: 'directory',
+    });
+
+    const now = new Date().toISOString();
+    const id = this.generateId();
+    const fullBranch: LocalBranch = {
+      ...branch,
+      projectId,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.writeFileSafely(
+      this.getBranchPath(projectDir, id),
+      JSON.stringify(fullBranch, null, 2)
+    );
+
+    return fullBranch;
+  }
+
+  async listBranches(projectId: string): Promise<LocalBranch[]> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return [];
+    }
+
+    await this.ensureAccess(path.join(projectDir, 'branches'), {
+      intent: 'read',
+      createIfMissing: true,
+      kind: 'directory',
+    });
+
+    try {
+      const entries = await fs.readdir(path.join(projectDir, 'branches'), {
+        withFileTypes: true,
+      });
+
+      const branches: LocalBranch[] = [];
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.json')) {
+          continue;
+        }
+
+        const filePath = path.join(projectDir, 'branches', entry.name);
+        try {
+          const raw = await fs.readFile(filePath, 'utf-8');
+          branches.push(JSON.parse(raw) as LocalBranch);
+        } catch (error) {
+          if (LocalStorage.isPermissionError(error)) {
+            throw new Error(LocalStorage.formatPermissionMessage(filePath, 'read'));
+          }
+          console.warn('[onlook-local-storage] Failed to parse branch file', filePath, error);
+        }
+      }
+
+      return branches.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(
+          LocalStorage.formatPermissionMessage(path.join(projectDir, 'branches'), 'read')
+        );
+      }
+
+      throw new Error(
+        LocalStorage.formatGenericAccessMessage(path.join(projectDir, 'branches'), error)
+      );
+    }
+  }
+
+  async updateBranch(
+    projectId: string,
+    branchId: string,
+    updates: Partial<Omit<LocalBranch, 'id' | 'projectId' | 'createdAt'>>
+  ): Promise<LocalBranch | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const branchPath = this.getBranchPath(projectDir, branchId);
+    try {
+      const raw = await fs.readFile(branchPath, 'utf-8');
+      const branch = JSON.parse(raw) as LocalBranch;
+      const updated: LocalBranch = {
+        ...branch,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await this.writeFileSafely(branchPath, JSON.stringify(updated, null, 2));
+      return updated;
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(branchPath, 'write'));
+      }
+      return null;
+    }
+  }
+
+  async deleteBranch(projectId: string, branchId: string): Promise<boolean> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return false;
+    }
+
+    const branchPath = this.getBranchPath(projectDir, branchId);
+    try {
+      await fs.rm(branchPath, { force: true });
+      return true;
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(branchPath, 'write'));
+      }
+      return false;
+    }
+  }
+
+  private async writeCanvasFile(
+    projectDir: string,
+    canvas: LocalCanvas
+  ): Promise<void> {
+    const normalized = LocalStorage.canvasFileSchema.parse({
+      ...canvas,
+      state: {
+        scale: canvas.state.scale,
+        position: {
+          x: canvas.state.position.x,
+          y: canvas.state.position.y,
+        },
+      },
+      frames: canvas.frames.map((frame) => ({
+        ...frame,
+        position: {
+          x: frame.position.x,
+          y: frame.position.y,
+        },
+        dimension: {
+          width: frame.dimension.width,
+          height: frame.dimension.height,
+        },
+      })),
+    });
+
+    await this.writeFileSafely(
+      path.join(projectDir, 'canvases', `${normalized.id}.json`),
+      JSON.stringify(normalized, null, 2)
+    );
+  }
+
+  private async maybeMigrateLegacyFrames(
+    projectDir: string,
+    canvas: LocalCanvas
+  ): Promise<LocalCanvas> {
+    if (canvas.frames.length > 0) {
+      return canvas;
+    }
+
+    const legacyDir = path.join(projectDir, 'frames');
+    if (!(await this.pathExists(legacyDir))) {
+      return canvas;
+    }
+
+    let migrated = false;
+    const migratedFrames: LocalFrame[] = [];
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(legacyDir, { withFileTypes: true });
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(legacyDir, 'read'));
+      }
+      return canvas;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) {
+        continue;
+      }
+
+      const filePath = path.join(legacyDir, entry.name);
+      try {
+        const raw = await fs.readFile(filePath, 'utf-8');
+        const parsed = LocalStorage.canvasFrameSchema.parse({
+          projectId: canvas.projectId,
+          canvasId: canvas.id,
+          ...JSON.parse(raw),
+        });
+
+        if (parsed.canvasId !== canvas.id) {
+          continue;
+        }
+
+        migratedFrames.push({
+          ...parsed,
+          projectId: parsed.projectId ?? canvas.projectId,
+        });
+        migrated = true;
+        await fs.rm(filePath, { force: true }).catch(() => undefined);
+      } catch (error) {
+        if (LocalStorage.isPermissionError(error)) {
+          throw new Error(LocalStorage.formatPermissionMessage(filePath, 'read'));
+        }
+        console.warn('[onlook-local-storage] Failed to migrate legacy frame file', filePath, error);
+      }
+    }
+
+    if (!migrated || migratedFrames.length === 0) {
+      return canvas;
+    }
+
+    const updatedCanvas: LocalCanvas = {
+      ...canvas,
+      frames: migratedFrames,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.writeCanvasFile(projectDir, updatedCanvas);
+    return updatedCanvas;
 
 export interface LocalConversation {
   id: string;
@@ -2834,6 +3555,28 @@ export class LocalStorage {
     await this.refreshProjectIndex();
 
     for (const [projectId] of this.projectDirIndex) {
+      const canvases = await this.listCanvases(projectId);
+      for (const canvas of canvases) {
+        const frame = canvas.frames.find((item) => item.id === frameId);
+        if (frame) {
+          return { frame, canvas, projectId };
+        }
+      const canvas = await this.getCanvas(projectId, canvasId);
+      if (canvas) {
+        return { canvas, projectId };
+      }
+    }
+
+    return null;
+  }
+
+  async findCanvasById(
+    canvasId: string
+  ): Promise<{ canvas: LocalCanvas; projectId: string } | null> {
+    await this.ensureReady();
+    await this.refreshProjectIndex();
+
+    for (const [projectId] of this.projectDirIndex) {
       const canvas = await this.getCanvas(projectId, canvasId);
       if (canvas) {
         return { canvas, projectId };
@@ -3358,6 +4101,61 @@ export class LocalStorage {
       await fs.unlink(filePath);
       return true;
     } catch (error) {
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(
+          LocalStorage.formatPermissionMessage(path.join(projectDir, 'conversations'), 'read')
+        );
+      }
+
+      throw new Error(
+        LocalStorage.formatGenericAccessMessage(path.join(projectDir, 'conversations'), error)
+      );
+    }
+  }
+
+  async updateConversation(
+    projectId: string,
+    conversationId: string,
+    updates: Partial<Pick<LocalConversation, 'title' | 'suggestions'>>
+  ): Promise<LocalConversation | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const conversation = await this.readConversationFile(projectDir, conversationId);
+    if (!conversation) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const updatedConversation: LocalConversationFile = {
+      ...conversation,
+      title: updates.title ?? conversation.title ?? null,
+      suggestions: updates.suggestions ?? conversation.suggestions ?? [],
+      updatedAt: now,
+    };
+
+    await this.writeConversationFile(projectDir, updatedConversation);
+    return this.toConversationMetadata(updatedConversation);
+  }
+
+  async deleteConversation(projectId: string, conversationId: string): Promise<boolean> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return false;
+    }
+
+    const filePath = this.getConversationPath(projectDir, conversationId);
+    try {
+      await fs.unlink(filePath);
+      return true;
+    } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
         return false;
@@ -3395,6 +4193,48 @@ export class LocalStorage {
       throw new Error(
         LocalStorage.formatGenericAccessMessage(path.join(projectDir, 'conversations'), error)
       );
+    }
+
+    return conversation.messages;
+  }
+
+  async replaceConversationMessages(
+    projectId: string,
+    conversationId: string,
+    messages: LocalConversationMessage[]
+  ): Promise<void> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      throw new Error(`Project ${projectId} not found`);
+    }
+
+    const conversation = await this.readConversationFile(projectDir, conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation ${conversationId} not found`);
+    }
+
+    const updated: LocalConversationFile = {
+      ...conversation,
+      messages,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.writeConversationFile(projectDir, updated);
+  }
+
+  async updateConversationMessage(
+    projectId: string,
+    conversationId: string,
+    messageId: string,
+    updates: Partial<Pick<LocalConversationMessage, 'context' | 'parts' | 'checkpoints' | 'content' | 'createdAt'>>
+  ): Promise<void> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      throw new Error(`Project ${projectId} not found`);
     }
 
     return conversation.messages;

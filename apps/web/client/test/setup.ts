@@ -106,6 +106,21 @@ mock.module('@onlook/ui/sonner', () => ({
     }
 }));
 
+// Provide lightweight stubs for frequently imported utilities
+mock.module('@onlook/utility', () => ({
+    assertNever: (value: never): never => {
+        throw new Error(`Unexpected call to assertNever with value: ${String(value)}`);
+    },
+    CssToTailwindTranslator: () => ({ data: [] }),
+    propertyMap: new Map<string, (value: string, isCustom?: boolean) => string>(),
+    jsonClone: <T>(value: T): T => (typeof structuredClone === 'function' ? structuredClone(value) : value),
+    customTwMerge: (...classes: Array<string | string[]>) =>
+        classes
+            .flat()
+            .filter((value): value is string => typeof value === 'string' && value.length > 0)
+            .join(' '),
+}));
+
 // Mock MobX to avoid strict mode issues in tests
 mock.module('mobx', () => ({
     makeAutoObservable: mock(() => {}),
