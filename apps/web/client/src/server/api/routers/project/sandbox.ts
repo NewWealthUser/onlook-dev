@@ -29,6 +29,20 @@ function resolveProviderType(sandboxId: string, requested?: CodeProvider) {
     return sandboxId.startsWith(LOCAL_SANDBOX_PREFIX) ? CodeProvider.Local : CodeProvider.CodeSandbox;
 }
 
+const LOCAL_SANDBOX_PREFIX = 'local-';
+const PROJECTS_ROOT = path.resolve(env.ONLOOK_PROJECTS_DIR);
+
+function sanitizeSandboxId(sandboxId: string): string {
+    return sandboxId.replace(/[^a-zA-Z0-9-_]/g, '');
+}
+
+function resolveProviderType(sandboxId: string, requested?: CodeProvider) {
+    if (requested) {
+        return requested;
+    }
+    return sandboxId.startsWith(LOCAL_SANDBOX_PREFIX) ? CodeProvider.Local : CodeProvider.CodeSandbox;
+}
+
 const getProjectsRoot = () => env.ONLOOK_PROJECTS_DIR;
 
 const resolveProjectPath = (sandboxId: string) =>
@@ -54,6 +68,13 @@ async function getProvider({
     if (resolvedProvider === CodeProvider.Local) {
         const sanitizedId = sanitizeSandboxId(sandboxId);
         const projectPath = path.join(PROJECTS_ROOT, sanitizedId);
+        return createCodeProviderClient(CodeProvider.Local, {
+            providerOptions: {
+                local: {
+                    sandboxId,
+                    projectPath,
+                    preferredPort: 3000,
+                    projectsRoot: PROJECTS_ROOT,
         return createCodeProviderClient(CodeProvider.Local, {
             providerOptions: {
                 local: {

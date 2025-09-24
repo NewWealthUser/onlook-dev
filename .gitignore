@@ -47,3 +47,6 @@ mise.toml
 
 # Temporary files
 .tmp/
+
+# Documentation recordings (kept out of git to avoid large binaries)
+docs/images/regressions/*.gif
