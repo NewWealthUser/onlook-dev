@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { tmpdir } from 'os';
+import { LocalStorage, type LocalConversationMessage } from '../src/local-storage';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -218,6 +222,104 @@ describe('LocalStorage left panel state persistence', () => {
 
     const assets = await storage.listAssets(project.id);
     expect(assets).toEqual(expect.arrayContaining(['images/logo.png', 'hero.jpg']));
+  });
+});
+
+describe('LocalStorage conversation transcripts', () => {
+  let baseDir: string;
+  let storage: LocalStorage;
+
+  beforeEach(async () => {
+    baseDir = await fs.mkdtemp(path.join(tmpdir(), 'onlook-conversation-'));
+    storage = new LocalStorage(baseDir);
+  });
+
+  afterEach(async () => {
+    await fs.rm(baseDir, { recursive: true, force: true });
+  });
+
+  it('persists conversation messages and metadata updates', async () => {
+    const project = await storage.createProject({
+      name: 'Chat Project',
+      description: 'Conversation persistence',
+      tags: [],
+    });
+
+    const conversation = await storage.createConversation({
+      projectId: project.id,
+      title: 'Initial Chat',
+    });
+
+    const now = new Date().toISOString();
+    const messages: LocalConversationMessage[] = [
+      {
+        id: 'm1',
+        conversationId: conversation.id,
+        content: 'Hello world',
+        role: 'user',
+        createdAt: now,
+        context: [],
+        parts: [],
+        checkpoints: [],
+      },
+      {
+        id: 'm2',
+        conversationId: conversation.id,
+        content: 'Welcome to Onlook',
+        role: 'assistant',
+        createdAt: now,
+        context: [],
+        parts: [],
+        checkpoints: [],
+      },
+    ];
+
+    await storage.replaceConversationMessages(project.id, conversation.id, messages);
+
+    const loadedMessages = await storage.listConversationMessages(project.id, conversation.id);
+    expect(loadedMessages.map((msg) => msg.content)).toEqual([
+      'Hello world',
+      'Welcome to Onlook',
+    ]);
+
+    const updatedConversation = await storage.updateConversation(project.id, conversation.id, {
+      title: 'Updated Chat',
+      suggestions: [
+        {
+          title: 'Refine hero section',
+          prompt: 'Tighten the hero copy and ensure the CTA stands out.',
+        },
+      ],
+    });
+
+    expect(updatedConversation?.title).toBe('Updated Chat');
+    expect(updatedConversation?.suggestions).toHaveLength(1);
+
+    const checkpointCreatedAt = new Date().toISOString();
+    await storage.updateConversationMessage(project.id, conversation.id, 'm1', {
+      checkpoints: [
+        {
+          type: 'git',
+          oid: 'abc123',
+          createdAt: checkpointCreatedAt,
+        },
+      ],
+    });
+
+    const reloaded = new LocalStorage(baseDir);
+    const persistedMessages = await reloaded.listConversationMessages(project.id, conversation.id);
+    expect(persistedMessages).toHaveLength(2);
+    const reloadedMessage = persistedMessages.find((msg) => msg.id === 'm1');
+    expect(reloadedMessage?.checkpoints).toHaveLength(1);
+
+    const persistedConversation = await reloaded.getConversation(project.id, conversation.id);
+    expect(persistedConversation?.title).toBe('Updated Chat');
+    expect(persistedConversation?.suggestions[0]?.title).toBe('Refine hero section');
+
+    const deleted = await reloaded.deleteConversation(project.id, conversation.id);
+    expect(deleted).toBe(true);
+    const afterDeletion = await reloaded.listConversationMessages(project.id, conversation.id);
+    expect(afterDeletion).toHaveLength(0);
   });
 });
 

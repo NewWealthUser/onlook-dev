@@ -1,72 +1,107 @@
 import { initModel } from '@onlook/ai';
-import {
-    conversationInsertSchema,
-    conversations,
-    conversationUpdateSchema,
-    fromDbConversation
-} from '@onlook/db';
+import { localStorage, type LocalConversation } from '@onlook/db/src/local-storage';
+import type { ChatConversation } from '@onlook/models';
 import { LLMProvider, OPENROUTER_MODELS } from '@onlook/models';
 import { generateText } from 'ai';
-import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
 
+const createConversationInput = z.object({
+    projectId: z.string(),
+    title: z.string().optional().nullable(),
+});
+
+const updateConversationInput = z.object({
+    projectId: z.string(),
+    id: z.string(),
+    title: z.string().optional().nullable(),
+    suggestions: z
+        .array(
+            z.object({
+                title: z.string(),
+                prompt: z.string(),
+            })
+        )
+        .optional(),
+});
+
+const deleteConversationInput = z.object({
+    projectId: z.string(),
+    conversationId: z.string(),
+});
+
+const getConversationInput = z.object({
+    projectId: z.string(),
+    conversationId: z.string(),
+});
+
+const generateTitleInput = z.object({
+    projectId: z.string(),
+    conversationId: z.string(),
+    content: z.string(),
+});
+
+const toChatConversation = (conversation: LocalConversation): ChatConversation => ({
+    id: conversation.id,
+    projectId: conversation.projectId,
+    title: conversation.title,
+    createdAt: new Date(conversation.createdAt),
+    updatedAt: new Date(conversation.updatedAt),
+    suggestions: conversation.suggestions ?? [],
+});
+
 export const conversationRouter = createTRPCRouter({
     getAll: protectedProcedure
         .input(z.object({ projectId: z.string() }))
-        .query(async ({ ctx, input }) => {
-            const dbConversations = await ctx.db.query.conversations.findMany({
-                where: eq(conversations.projectId, input.projectId),
-                orderBy: (conversations, { desc }) => [desc(conversations.updatedAt)],
-            });
-            return dbConversations.map((conversation) => fromDbConversation(conversation));
+        .query(async ({ input }) => {
+            const conversations = await localStorage.listConversations(input.projectId);
+            return conversations.map(toChatConversation);
         }),
+
     get: protectedProcedure
-        .input(z.object({ conversationId: z.string() }))
-        .query(async ({ ctx, input }) => {
-            const conversation = await ctx.db.query.conversations.findFirst({
-                where: eq(conversations.id, input.conversationId),
-            });
+        .input(getConversationInput)
+        .query(async ({ input }) => {
+            const conversation = await localStorage.getConversation(input.projectId, input.conversationId);
             if (!conversation) {
                 throw new Error('Conversation not found');
             }
-            return fromDbConversation(conversation);
+            return toChatConversation(conversation);
         }),
+
     upsert: protectedProcedure
-        .input(conversationInsertSchema)
-        .mutation(async ({ ctx, input }) => {
-            const [conversation] = await ctx.db.insert(conversations).values(input).returning();
-            if (!conversation) {
-                throw new Error('Conversation not created');
-            }
-            return fromDbConversation(conversation);
+        .input(createConversationInput)
+        .mutation(async ({ input }) => {
+            const conversation = await localStorage.createConversation({
+                projectId: input.projectId,
+                title: input.title ?? null,
+            });
+            return toChatConversation(conversation);
         }),
+
     update: protectedProcedure
-        .input(conversationUpdateSchema)
-        .mutation(async ({ ctx, input }) => {
-            const [conversation] = await ctx.db.update({
-                ...conversations,
-                updatedAt: new Date(),
-            }).set(input)
-                .where(eq(conversations.id, input.id)).returning();
-            if (!conversation) {
-                throw new Error('Conversation not updated');
+        .input(updateConversationInput)
+        .mutation(async ({ input }) => {
+            const updated = await localStorage.updateConversation(input.projectId, input.id, {
+                title: input.title ?? undefined,
+                suggestions: input.suggestions ?? undefined,
+            });
+
+            if (!updated) {
+                throw new Error('Conversation not found');
             }
-            return fromDbConversation(conversation);
+
+            return toChatConversation(updated);
         }),
+
     delete: protectedProcedure
-        .input(z.object({
-            conversationId: z.string()
-        }))
-        .mutation(async ({ ctx, input }) => {
-            await ctx.db.delete(conversations).where(eq(conversations.id, input.conversationId));
+        .input(deleteConversationInput)
+        .mutation(async ({ input }) => {
+            await localStorage.deleteConversation(input.projectId, input.conversationId);
         }),
+
     generateTitle: protectedProcedure
-        .input(z.object({
-            conversationId: z.string(),
-            content: z.string(),
-        }))
+        .input(generateTitleInput)
         .mutation(async ({ ctx, input }) => {
             const { model, providerOptions, headers } = await initModel({
                 provider: LLMProvider.OPENROUTER,
@@ -94,9 +129,9 @@ export const conversationRouter = createTRPCRouter({
 
             const generatedName = result.text.trim();
             if (generatedName && generatedName.length > 0 && generatedName.length <= MAX_NAME_LENGTH) {
-                await ctx.db.update(conversations).set({
-                    displayName: generatedName,
-                }).where(eq(conversations.id, input.conversationId));
+                await localStorage.updateConversation(input.projectId, input.conversationId, {
+                    title: generatedName,
+                });
                 return generatedName;
             }
 

@@ -160,6 +160,7 @@ export function useChat({ conversationId, projectId, initialMessages }: UseChatP
             const fetchSuggestions = async () => {
                 try {
                     const suggestions = await api.chat.suggestions.generate.mutate({
+                        projectId: editorEngine.projectId,
                         conversationId,
                         messages: prepareMessagesForSuggestions(messagesRef.current),
                     });
@@ -197,6 +198,7 @@ export function useChat({ conversationId, projectId, initialMessages }: UseChatP
                 const messageWithCommit = attachCommitToUserMessage(
                     commit,
                     lastUserMessage,
+                    editorEngine.projectId,
                     conversationId,
                 );
                 setMessages(

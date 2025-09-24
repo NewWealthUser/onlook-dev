@@ -45,9 +45,9 @@ export class ChatContext {
             case ChatType.EDIT:
             case ChatType.CREATE:
             case ChatType.ASK:
-                return await this.getLatestContext();
+                return await this.applyRestriction(await this.getLatestContext());
             case ChatType.FIX:
-                return this.getErrorContext();
+                return await this.applyRestriction(this.getErrorContext());
             default:
                 assertNever(type);
         }
@@ -98,6 +98,63 @@ export class ChatContext {
             }
             return c;
         })) satisfies MessageContext[];
+    }
+
+    private async applyRestriction(context: MessageContext[]): Promise<MessageContext[]> {
+        if (!this.editorEngine.state.restrictToSelection) {
+            return context;
+        }
+
+        const highlightContext = context.filter(
+            (item): item is HighlightMessageContext => item.type === MessageContextType.HIGHLIGHT,
+        );
+
+        if (highlightContext.length > 0) {
+            const allowedPaths = new Set(highlightContext.map((c) => c.path));
+            const allowedBranchIds = new Set(highlightContext.map((c) => c.branchId));
+
+            return context.filter((item) => {
+                if (item.type === MessageContextType.HIGHLIGHT) {
+                    return true;
+                }
+                if (item.type === MessageContextType.FILE) {
+                    return allowedPaths.has(item.path);
+                }
+                if (item.type === MessageContextType.BRANCH) {
+                    return allowedBranchIds.has(item.branch.id);
+                }
+                if (item.type === MessageContextType.IMAGE) {
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        const activeFile = this.editorEngine.ide.activeFile;
+        if (!activeFile) {
+            return context;
+        }
+
+        const file = await this.editorEngine.activeSandbox.readFile(activeFile.path);
+        if (!file || file.type === 'binary' || typeof file.content !== 'string') {
+            return context;
+        }
+
+        const activeBranch = this.editorEngine.branches.activeBranch;
+        if (!activeBranch) {
+            return context;
+        }
+
+        const baseContext: FileMessageContext = {
+            type: MessageContextType.FILE,
+            displayName: activeFile.path,
+            path: activeFile.path,
+            content: file.content,
+            branchId: activeBranch.id,
+        };
+
+        const imageContexts = context.filter((item) => item.type === MessageContextType.IMAGE);
+        return [...imageContexts, baseContext];
     }
 
     private async getImageContext(): Promise<ImageMessageContext[]> {

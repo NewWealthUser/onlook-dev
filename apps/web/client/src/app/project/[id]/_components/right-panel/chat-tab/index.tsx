@@ -9,7 +9,7 @@ interface ChatTabProps {
 
 export const ChatTab = ({ conversationId, projectId }: ChatTabProps) => {
     const { data: initialMessages, isLoading } = api.chat.message.getAll.useQuery(
-        { conversationId: conversationId },
+        { projectId, conversationId },
         { enabled: !!conversationId },
     );
 
