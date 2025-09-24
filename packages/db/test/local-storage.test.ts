@@ -188,6 +188,57 @@ describe('LocalStorage left panel state persistence', () => {
     const reloaded = new LocalStorage(baseDir);
     const persisted = await reloaded.listFrames(project.id, { branchId: branch.id });
     expect(persisted.map((f) => f.id)).toContain(frame.id);
+
+    const canvases = await reloaded.listCanvases(project.id);
+    expect(canvases[0]?.frames.map((f) => f.id)).toContain(frame.id);
+  });
+
+  it('persists multiple frames for a canvas across reloads', async () => {
+    const project = await storage.createProject({
+      name: 'Multi Frame Project',
+      description: undefined,
+      tags: [],
+    });
+
+    const canvas = await storage.createCanvas({
+      projectId: project.id,
+      name: 'Canvas B',
+    });
+
+    const branch = (await storage.listBranches(project.id))[0]!;
+
+    const desktop = await storage.createFrame({
+      projectId: project.id,
+      canvasId: canvas.id,
+      branchId: branch.id,
+      name: 'Desktop',
+      position: { x: 120, y: 80 },
+      dimension: { width: 1440, height: 960 },
+      url: 'http://localhost:3000',
+    });
+
+    const mobile = await storage.createFrame({
+      projectId: project.id,
+      canvasId: canvas.id,
+      branchId: branch.id,
+      name: 'Mobile',
+      position: { x: 1820, y: 80 },
+      dimension: { width: 440, height: 956 },
+      url: 'http://localhost:3000',
+    });
+
+    const reloaded = new LocalStorage(baseDir);
+    const frames = await reloaded.listFrames(project.id, { canvasId: canvas.id });
+
+    const frameIds = frames.map((f) => f.id);
+    expect(frameIds).toEqual(expect.arrayContaining([desktop.id, mobile.id]));
+
+    const [desktopFrame] = frames.filter((f) => f.id === desktop.id);
+    expect(desktopFrame?.dimension.width).toBe(1440);
+    expect(desktopFrame?.dimension.height).toBe(960);
+
+    const canvasWithFrames = (await reloaded.listCanvases(project.id))[0];
+    expect(canvasWithFrames?.frames).toHaveLength(2);
   });
 
   it('saves project files used by the pages tab', async () => {

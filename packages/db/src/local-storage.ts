@@ -1,6 +1,7 @@
 import { promises as fs, Dirent, constants as fsConstants } from 'fs';
 import path from 'path';
 import { z } from 'zod';
+import { DefaultSettings } from '@onlook/constants';
 import type { ChatSuggestion } from '@onlook/models';
 
 export interface LocalBrandColor {
@@ -24,6 +25,30 @@ export interface LocalBrandState {
   updatedAt: string;
 }
 =======
+import path from 'path';
+import { z } from 'zod';
+import type { ChatSuggestion } from '@onlook/models';
+
+export interface LocalBrandColor {
+  id: string;
+  value: string;
+  label?: string;
+}
+
+export interface LocalBrandFont {
+  id: string;
+  family: string;
+  files: string[];
+  styles?: string[];
+  weights?: string[];
+  displayName?: string;
+}
+
+export interface LocalBrandState {
+  colors: LocalBrandColor[];
+  fonts: LocalBrandFont[];
+  updatedAt: string;
+}
 import path from 'path';
 import { z } from 'zod';
 
@@ -82,12 +107,19 @@ export interface LocalBranch {
   sandboxUrl?: string | null;
 }
 
+export interface LocalCanvasState {
+  scale: number;
+  position: { x: number; y: number };
+}
+
 export interface LocalCanvas {
   id: string;
   projectId: string;
   name: string;
   createdAt: string;
   updatedAt: string;
+  frames: LocalFrame[];
+  state: LocalCanvasState;
 }
 
 export interface LocalFrame {
@@ -199,6 +231,81 @@ export class LocalStorage {
       sandboxId: data.sandboxId ?? undefined,
       sandboxUrl: data.sandboxUrl ?? undefined,
     }));
+
+  private static readonly canvasStateSchema = z
+    .object({
+      scale: z.coerce.number().default(() => DefaultSettings.SCALE),
+      position: z
+        .object({
+          x: z.coerce.number(),
+          y: z.coerce.number(),
+        })
+        .default(() => ({
+          x: DefaultSettings.PAN_POSITION.x,
+          y: DefaultSettings.PAN_POSITION.y,
+        })),
+    })
+    .transform((state): LocalCanvasState => ({
+      scale: state.scale,
+      position: {
+        x: state.position.x,
+        y: state.position.y,
+      },
+    }));
+
+  private static readonly canvasFrameSchema = z.object({
+    id: z.string(),
+    projectId: z.string(),
+    canvasId: z.string(),
+    branchId: z.string(),
+    name: z.string().default('Frame'),
+    position: z.object({
+      x: z.coerce.number(),
+      y: z.coerce.number(),
+    }),
+    dimension: z.object({
+      width: z.coerce.number(),
+      height: z.coerce.number(),
+    }),
+    url: z.string(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  });
+
+  private static readonly canvasFileSchema = z
+    .object({
+      id: z.string(),
+      projectId: z.string(),
+      name: z.string(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+      frames: z.array(LocalStorage.canvasFrameSchema).default([]),
+      state: LocalStorage.canvasStateSchema.default(() =>
+        LocalStorage.defaultCanvasState()
+      ),
+    })
+    .transform((data): LocalCanvas => ({
+      id: data.id,
+      projectId: data.projectId,
+      name: data.name,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      frames: data.frames.map((frame) => ({
+        ...frame,
+        name: frame.name ?? 'Frame',
+      })),
+      state: data.state,
+    }));
+
+  private static defaultCanvasState(): LocalCanvasState {
+    return {
+      scale: DefaultSettings.SCALE,
+      position: {
+        x: DefaultSettings.PAN_POSITION.x,
+        y: DefaultSettings.PAN_POSITION.y,
+      },
+    };
+  }
 
   private static readonly conversationMessageSchema = z.object({
     id: z.string(),
@@ -880,6 +987,239 @@ export class LocalStorage {
   ): Promise<LocalBranch> {
     await this.ensureReady();
 
+    const projectDir = await this.requireProjectDir(projectId);
+    await this.ensureAccess(path.join(projectDir, 'branches'), {
+      intent: 'write',
+      createIfMissing: true,
+      kind: 'directory',
+    });
+
+    const now = new Date().toISOString();
+    const id = this.generateId();
+    const fullBranch: LocalBranch = {
+      ...branch,
+      projectId,
+      id,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.writeFileSafely(
+      this.getBranchPath(projectDir, id),
+      JSON.stringify(fullBranch, null, 2)
+    );
+
+    return fullBranch;
+  }
+
+  async listBranches(projectId: string): Promise<LocalBranch[]> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return [];
+    }
+
+    await this.ensureAccess(path.join(projectDir, 'branches'), {
+      intent: 'read',
+      createIfMissing: true,
+      kind: 'directory',
+    });
+
+    try {
+      const entries = await fs.readdir(path.join(projectDir, 'branches'), {
+        withFileTypes: true,
+      });
+
+      const branches: LocalBranch[] = [];
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.json')) {
+          continue;
+        }
+
+        const filePath = path.join(projectDir, 'branches', entry.name);
+        try {
+          const raw = await fs.readFile(filePath, 'utf-8');
+          branches.push(JSON.parse(raw) as LocalBranch);
+        } catch (error) {
+          if (LocalStorage.isPermissionError(error)) {
+            throw new Error(LocalStorage.formatPermissionMessage(filePath, 'read'));
+          }
+          console.warn('[onlook-local-storage] Failed to parse branch file', filePath, error);
+        }
+      }
+
+      return branches.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(
+          LocalStorage.formatPermissionMessage(path.join(projectDir, 'branches'), 'read')
+        );
+      }
+
+      throw new Error(
+        LocalStorage.formatGenericAccessMessage(path.join(projectDir, 'branches'), error)
+      );
+    }
+  }
+
+  async updateBranch(
+    projectId: string,
+    branchId: string,
+    updates: Partial<Omit<LocalBranch, 'id' | 'projectId' | 'createdAt'>>
+  ): Promise<LocalBranch | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const branchPath = this.getBranchPath(projectDir, branchId);
+    try {
+      const raw = await fs.readFile(branchPath, 'utf-8');
+      const branch = JSON.parse(raw) as LocalBranch;
+      const updated: LocalBranch = {
+        ...branch,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await this.writeFileSafely(branchPath, JSON.stringify(updated, null, 2));
+      return updated;
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(branchPath, 'write'));
+      }
+      return null;
+    }
+  }
+
+  async deleteBranch(projectId: string, branchId: string): Promise<boolean> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return false;
+    }
+
+    const branchPath = this.getBranchPath(projectDir, branchId);
+    try {
+      await fs.rm(branchPath, { force: true });
+      return true;
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(branchPath, 'write'));
+      }
+      return false;
+    }
+  }
+
+  private async writeCanvasFile(
+    projectDir: string,
+    canvas: LocalCanvas
+  ): Promise<void> {
+    const normalized = LocalStorage.canvasFileSchema.parse({
+      ...canvas,
+      state: {
+        scale: canvas.state.scale,
+        position: {
+          x: canvas.state.position.x,
+          y: canvas.state.position.y,
+        },
+      },
+      frames: canvas.frames.map((frame) => ({
+        ...frame,
+        position: {
+          x: frame.position.x,
+          y: frame.position.y,
+        },
+        dimension: {
+          width: frame.dimension.width,
+          height: frame.dimension.height,
+        },
+      })),
+    });
+
+    await this.writeFileSafely(
+      path.join(projectDir, 'canvases', `${normalized.id}.json`),
+      JSON.stringify(normalized, null, 2)
+    );
+  }
+
+  private async maybeMigrateLegacyFrames(
+    projectDir: string,
+    canvas: LocalCanvas
+  ): Promise<LocalCanvas> {
+    if (canvas.frames.length > 0) {
+      return canvas;
+    }
+
+    const legacyDir = path.join(projectDir, 'frames');
+    if (!(await this.pathExists(legacyDir))) {
+      return canvas;
+    }
+
+    let migrated = false;
+    const migratedFrames: LocalFrame[] = [];
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(legacyDir, { withFileTypes: true });
+    } catch (error) {
+      if (LocalStorage.isPermissionError(error)) {
+        throw new Error(LocalStorage.formatPermissionMessage(legacyDir, 'read'));
+      }
+      return canvas;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) {
+        continue;
+      }
+
+      const filePath = path.join(legacyDir, entry.name);
+      try {
+        const raw = await fs.readFile(filePath, 'utf-8');
+        const parsed = LocalStorage.canvasFrameSchema.parse({
+          projectId: canvas.projectId,
+          canvasId: canvas.id,
+          ...JSON.parse(raw),
+        });
+
+        if (parsed.canvasId !== canvas.id) {
+          continue;
+        }
+
+        migratedFrames.push({
+          ...parsed,
+          projectId: parsed.projectId ?? canvas.projectId,
+        });
+        migrated = true;
+        await fs.rm(filePath, { force: true }).catch(() => undefined);
+      } catch (error) {
+        if (LocalStorage.isPermissionError(error)) {
+          throw new Error(LocalStorage.formatPermissionMessage(filePath, 'read'));
+        }
+        console.warn('[onlook-local-storage] Failed to migrate legacy frame file', filePath, error);
+      }
+    }
+
+    if (!migrated || migratedFrames.length === 0) {
+      return canvas;
+    }
+
+    const updatedCanvas: LocalCanvas = {
+      ...canvas,
+      frames: migratedFrames,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.writeCanvasFile(projectDir, updatedCanvas);
+    return updatedCanvas;
+=======
 
 export interface LocalConversation {
   id: string;
@@ -2161,6 +2501,11 @@ export class LocalStorage {
     await this.ensureReady();
 
     const projectDir = await this.requireProjectDir(frame.projectId);
+    const canvas = await this.getCanvas(frame.projectId, frame.canvasId);
+
+    if (!canvas) {
+      throw new Error(`Canvas ${frame.canvasId} not found for project ${frame.projectId}`);
+    }
     const framesDir = path.join(projectDir, 'frames');
     await this.ensureAccess(framesDir, {
       intent: 'write',
@@ -2177,6 +2522,13 @@ export class LocalStorage {
       updatedAt: now,
     };
 
+    const updatedCanvas: LocalCanvas = {
+      ...canvas,
+      updatedAt: now,
+      frames: [...canvas.frames, fullFrame],
+    };
+
+    await this.writeCanvasFile(projectDir, updatedCanvas);
     await this.writeFileSafely(
       this.getFramePath(projectDir, id),
       JSON.stringify(fullFrame, null, 2)
@@ -2196,6 +2548,102 @@ export class LocalStorage {
       return [];
     }
 
+    if (filters.canvasId) {
+      const canvas = await this.getCanvas(projectId, filters.canvasId);
+      if (!canvas) {
+        return [];
+      }
+
+      return canvas.frames
+        .filter((frame) =>
+          filters.branchId ? frame.branchId === filters.branchId : true
+        )
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    }
+
+    const canvases = await this.listCanvases(projectId);
+    const frames = canvases.flatMap((canvas) => canvas.frames);
+
+    return frames
+      .filter((frame) => (filters.branchId ? frame.branchId === filters.branchId : true))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  async updateFrame(
+    projectId: string,
+    frameId: string,
+    updates: Partial<Omit<LocalFrame, 'id' | 'projectId' | 'createdAt'>>
+  ): Promise<LocalFrame | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const canvases = await this.listCanvases(projectId);
+    for (const canvas of canvases) {
+      const index = canvas.frames.findIndex((frame) => frame.id === frameId);
+      if (index === -1) {
+        continue;
+      }
+
+      const existing = canvas.frames[index]!;
+      const updated: LocalFrame = {
+        ...existing,
+        ...updates,
+        position: updates.position ?? existing.position,
+        dimension: updates.dimension ?? existing.dimension,
+        canvasId: updates.canvasId ?? existing.canvasId,
+        branchId: updates.branchId ?? existing.branchId,
+        url: updates.url ?? existing.url,
+        name: updates.name ?? existing.name,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const updatedCanvas: LocalCanvas = {
+        ...canvas,
+        updatedAt: updated.updatedAt,
+        frames: [
+          ...canvas.frames.slice(0, index),
+          updated,
+          ...canvas.frames.slice(index + 1),
+        ],
+      };
+
+      await this.writeCanvasFile(projectDir, updatedCanvas);
+      return updated;
+    }
+
+    return null;
+  }
+
+  async deleteFrame(projectId: string, frameId: string): Promise<boolean> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return false;
+    }
+
+    const canvases = await this.listCanvases(projectId);
+    for (const canvas of canvases) {
+      const index = canvas.frames.findIndex((frame) => frame.id === frameId);
+      if (index === -1) {
+        continue;
+      }
+
+      const updatedCanvas: LocalCanvas = {
+        ...canvas,
+        updatedAt: new Date().toISOString(),
+        frames: [
+          ...canvas.frames.slice(0, index),
+          ...canvas.frames.slice(index + 1),
+        ],
+      };
+
+      await this.writeCanvasFile(projectDir, updatedCanvas);
+      return true;
     const framesDir = path.join(projectDir, 'frames');
     await this.ensureAccess(framesDir, {
       intent: 'read',
@@ -2356,8 +2804,43 @@ export class LocalStorage {
       }
       return null;
     }
+
+    return false;
   }
 
+  async findFrame(
+    frameId: string
+  ): Promise<{ frame: LocalFrame; canvas: LocalCanvas; projectId: string } | null> {
+    await this.ensureReady();
+    await this.refreshProjectIndex();
+
+    for (const [projectId] of this.projectDirIndex) {
+      const canvases = await this.listCanvases(projectId);
+      for (const canvas of canvases) {
+        const frame = canvas.frames.find((item) => item.id === frameId);
+        if (frame) {
+          return { frame, canvas, projectId };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  async findCanvasById(
+    canvasId: string
+  ): Promise<{ canvas: LocalCanvas; projectId: string } | null> {
+    await this.ensureReady();
+    await this.refreshProjectIndex();
+
+    for (const [projectId] of this.projectDirIndex) {
+      const canvas = await this.getCanvas(projectId, canvasId);
+      if (canvas) {
+        return { canvas, projectId };
+      }
+    }
+
+    return null;
   async deleteFrame(projectId: string, frameId: string): Promise<boolean> {
     await this.ensureReady();
 
@@ -2456,6 +2939,10 @@ export class LocalStorage {
 
   // Canvas operations
   async createCanvas(
+    canvas: Omit<LocalCanvas, 'id' | 'createdAt' | 'updatedAt' | 'frames' | 'state'> & {
+      frames?: LocalFrame[];
+      state?: Partial<LocalCanvasState>;
+    }
     canvas: Omit<LocalCanvas, 'id' | 'createdAt' | 'updatedAt'>
   ): Promise<LocalCanvas> {
     await this.ensureReady();
@@ -2465,20 +2952,30 @@ export class LocalStorage {
 
     const id = this.generateId();
     const now = new Date().toISOString();
-    const fullCanvas: LocalCanvas = {
+    const normalized = LocalStorage.canvasFileSchema.parse({
       ...canvas,
+      frames: canvas.frames ?? [],
+      state: {
+        scale: canvas.state?.scale ?? DefaultSettings.SCALE,
+        position: {
+          x: canvas.state?.position?.x ?? DefaultSettings.PAN_POSITION.x,
+          y: canvas.state?.position?.y ?? DefaultSettings.PAN_POSITION.y,
+        },
+      },
       id,
       createdAt: now,
       updatedAt: now,
-    };
+    });
 
     await this.writeFileSafely(
+      path.join(projectDir, 'canvases', `${id}.json`),
+      JSON.stringify(normalized, null, 2)
     await fs.writeFile(
       path.join(projectDir, 'canvases', `${id}.json`),
       JSON.stringify(fullCanvas, null, 2)
     );
 
-    return fullCanvas;
+    return normalized;
   }
 
   async getCanvas(
@@ -2497,6 +2994,8 @@ export class LocalStorage {
         path.join(projectDir, 'canvases', `${canvasId}.json`),
         'utf-8'
       );
+      const parsed = LocalStorage.canvasFileSchema.parse(JSON.parse(data));
+      return await this.maybeMigrateLegacyFrames(projectDir, parsed);
       return JSON.parse(data) as LocalCanvas;
     } catch (error) {
       if (LocalStorage.isPermissionError(error)) {
@@ -2548,6 +3047,39 @@ export class LocalStorage {
         LocalStorage.formatGenericAccessMessage(path.join(projectDir, 'canvases'), error)
       );
     }
+  }
+
+  async updateCanvasState(
+    projectId: string,
+    canvasId: string,
+    state: Partial<LocalCanvasState>
+  ): Promise<LocalCanvas | null> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      return null;
+    }
+
+    const canvas = await this.getCanvas(projectId, canvasId);
+    if (!canvas) {
+      return null;
+    }
+
+    const updatedCanvas: LocalCanvas = {
+      ...canvas,
+      state: {
+        scale: state.scale ?? canvas.state.scale,
+        position: {
+          x: state.position?.x ?? canvas.state.position.x,
+          y: state.position?.y ?? canvas.state.position.y,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.writeCanvasFile(projectDir, updatedCanvas);
+    return updatedCanvas;
   }
 
   // Conversation operations
@@ -2863,6 +3395,48 @@ export class LocalStorage {
       throw new Error(
         LocalStorage.formatGenericAccessMessage(path.join(projectDir, 'conversations'), error)
       );
+    }
+
+    return conversation.messages;
+  }
+
+  async replaceConversationMessages(
+    projectId: string,
+    conversationId: string,
+    messages: LocalConversationMessage[]
+  ): Promise<void> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      throw new Error(`Project ${projectId} not found`);
+    }
+
+    const conversation = await this.readConversationFile(projectDir, conversationId);
+    if (!conversation) {
+      throw new Error(`Conversation ${conversationId} not found`);
+    }
+
+    const updated: LocalConversationFile = {
+      ...conversation,
+      messages,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.writeConversationFile(projectDir, updated);
+  }
+
+  async updateConversationMessage(
+    projectId: string,
+    conversationId: string,
+    messageId: string,
+    updates: Partial<Pick<LocalConversationMessage, 'context' | 'parts' | 'checkpoints' | 'content' | 'createdAt'>>
+  ): Promise<void> {
+    await this.ensureReady();
+
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      throw new Error(`Project ${projectId} not found`);
     }
 
     return conversation.messages;
