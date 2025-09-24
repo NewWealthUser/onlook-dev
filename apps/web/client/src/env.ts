@@ -1,5 +1,40 @@
 import { createEnv } from '@t3-oss/env-nextjs';
+import { homedir } from 'node:os';
+import path from 'node:path';
 import { z } from 'zod';
+
+const expandHomePath = (rawValue: string) => {
+    const trimmed = rawValue.trim();
+    const unquoted = trimmed.replace(/^['"]|['"]$/g, '');
+
+    if (!unquoted) {
+        return unquoted;
+    }
+
+    const homeDirectory = homedir();
+    if (!homeDirectory) {
+        return unquoted;
+    }
+
+    if (unquoted === '~') {
+        return homeDirectory;
+    }
+
+    if (unquoted.startsWith('~/')) {
+        return path.join(homeDirectory, unquoted.slice(2));
+    }
+
+    if (unquoted.startsWith('$HOME')) {
+        const remainder = unquoted.slice('$HOME'.length);
+        if (!remainder) {
+            return homeDirectory;
+        }
+
+        return path.join(homeDirectory, remainder.replace(/^[/\\]/, ''));
+    }
+
+    return unquoted;
+};
 
 export const env = createEnv({
     /**
@@ -10,7 +45,10 @@ export const env = createEnv({
         NODE_ENV: z.enum(['development', 'test', 'production']),
         
         // Local storage
-        ONLOOK_PROJECTS_DIR: z.string().default('./onlook-projects'),
+        ONLOOK_PROJECTS_DIR: z
+            .string()
+            .default('./onlook-projects')
+            .transform((value) => expandHomePath(value) || './onlook-projects'),
 
         // AI Model providers
         OPENROUTER_API_KEY: z.string().optional(),
