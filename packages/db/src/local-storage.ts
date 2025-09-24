@@ -1,4 +1,5 @@
 import { promises as fs, Dirent, constants as fsConstants } from 'fs';
+import { promises as fs, Dirent } from 'fs';
 import path from 'path';
 
 export interface LocalProject {
@@ -56,6 +57,7 @@ export class LocalStorage {
   private readonly projectDirIndex = new Map<string, string>();
 
   private readonly largeAssetHintedProjects = new Set<string>();
+
 
   constructor(projectsDir?: string) {
     this.projectsDir = projectsDir ?? '';
@@ -438,6 +440,157 @@ export class LocalStorage {
     }
   }
 
+  }
+
+  private async initialize(providedPath?: string): Promise<void> {
+    const resolvedProjectsDir =
+      providedPath ?? (await LocalStorage.resolveDefaultProjectsDir());
+
+    this.projectsDir = resolvedProjectsDir;
+
+    await fs.mkdir(this.projectsDir, { recursive: true });
+    await this.refreshProjectIndex();
+  }
+
+  private static async resolveDefaultProjectsDir(): Promise<string> {
+    try {
+      const { env } = await import('../../../apps/web/client/src/env');
+      return env.ONLOOK_PROJECTS_DIR;
+    } catch (error) {
+      const fallback = process.env.ONLOOK_PROJECTS_DIR;
+      if (fallback && fallback.trim()) {
+        return LocalStorage.expandHomePath(fallback);
+      }
+
+      const home = process.env.HOME;
+      return home ? path.join(home, 'Onlook Projects') : './onlook-projects';
+    }
+  }
+
+  private static expandHomePath(rawValue: string): string {
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      return trimmed;
+    }
+
+    const homeDirectory = process.env.HOME;
+    if (!homeDirectory) {
+      return trimmed;
+    }
+
+    if (trimmed === '~') {
+      return homeDirectory;
+    }
+
+    if (trimmed.startsWith('~/')) {
+      return path.join(homeDirectory, trimmed.slice(2));
+    }
+
+    if (trimmed.startsWith('$HOME')) {
+      const remainder = trimmed.slice('$HOME'.length);
+      if (!remainder) {
+        return homeDirectory;
+      }
+
+      return path.join(homeDirectory, remainder.replace(/^[/\\]/, ''));
+    }
+
+    return trimmed;
+  }
+
+  private async ensureReady(): Promise<void> {
+    await this.ready;
+  }
+
+  private normalizeProjectName(name: string | undefined): string {
+    const fallback = 'Untitled Project';
+    if (!name) {
+      return fallback;
+    }
+
+    const trimmed = name.trim();
+    return trimmed || fallback;
+  }
+
+  private toDirectoryName(name: string): string {
+    const normalized = this.normalizeProjectName(name);
+    const sanitized = normalized.replace(/[<>:"/\\|?*\x00-\x1F]/g, '-');
+    const withoutTrailing = sanitized.replace(/[. ]+$/g, '');
+    return withoutTrailing || 'Untitled Project';
+  }
+
+  private getMetaPathFromDir(projectDir: string): string {
+    return path.join(projectDir, 'meta.json');
+  }
+
+  private async readProjectMeta(projectDir: string): Promise<LocalProject | null> {
+    try {
+      const data = await fs.readFile(this.getMetaPathFromDir(projectDir), 'utf-8');
+      return JSON.parse(data) as LocalProject;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  private async pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  private async refreshProjectIndex(): Promise<void> {
+    this.projectDirIndex.clear();
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(this.projectsDir, { withFileTypes: true });
+    } catch (error) {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const projectDir = path.join(this.projectsDir, entry.name);
+      const project = await this.readProjectMeta(projectDir);
+      if (project) {
+        this.projectDirIndex.set(project.id, projectDir);
+      }
+    }
+  }
+
+  private async getProjectDir(projectId: string): Promise<string | null> {
+    const existing = this.projectDirIndex.get(projectId);
+    if (existing) {
+      return existing;
+    }
+
+    await this.refreshProjectIndex();
+    return this.projectDirIndex.get(projectId) ?? null;
+  }
+
+  private async requireProjectDir(projectId: string): Promise<string> {
+    const projectDir = await this.getProjectDir(projectId);
+    if (!projectDir) {
+      throw new Error(`Project directory not found for id ${projectId}`);
+    }
+    return projectDir;
+  }
+
+  private async ensureProjectStructure(projectDir: string): Promise<void> {
+    const directories = ['files', 'canvases', 'conversations', 'previews', 'assets'];
+    await Promise.all(
+      directories.map((directory) =>
+        fs.mkdir(path.join(projectDir, directory), { recursive: true })
+      )
+    );
+  }
+
   private async getUniqueProjectDir(
     baseName: string,
     currentProjectId?: string
@@ -475,6 +628,8 @@ export class LocalStorage {
     const directoryBase = this.toDirectoryName(name);
     const { dirPath } = await this.getUniqueProjectDir(directoryBase);
 
+
+    await fs.mkdir(dirPath, { recursive: true });
     await this.ensureProjectStructure(dirPath);
 
     const id = this.generateId();
@@ -487,6 +642,7 @@ export class LocalStorage {
     };
 
     await this.writeFileSafely(
+    await fs.writeFile(
       this.getMetaPathFromDir(dirPath),
       JSON.stringify(fullProject, null, 2)
     );
@@ -501,6 +657,14 @@ export class LocalStorage {
 
     const projectDir = await this.getProjectDir(projectId);
     if (!projectDir) {
+      return null;
+    }
+
+    const project = await this.readProjectMeta(projectDir);
+    if (!project) {
+      return null;
+    }
+
       return null;
     }
 
@@ -555,11 +719,14 @@ export class LocalStorage {
 
         throw new Error(LocalStorage.formatGenericAccessMessage(targetDir, error));
       }
+      await fs.mkdir(path.dirname(targetDir), { recursive: true });
+      await fs.rename(currentDir, targetDir);
       this.projectDirIndex.set(projectId, targetDir);
     }
 
     await this.ensureProjectStructure(targetDir);
     await this.writeFileSafely(
+    await fs.writeFile(
       this.getMetaPathFromDir(targetDir),
       JSON.stringify(updatedProject, null, 2)
     );
@@ -618,6 +785,31 @@ export class LocalStorage {
       }
     }
 
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(this.projectsDir, { withFileTypes: true });
+    } catch (error) {
+      console.error('Failed to list projects:', error);
+      return [];
+    }
+
+    const projects: LocalProject[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const projectDir = path.join(this.projectsDir, entry.name);
+      const project = await this.readProjectMeta(projectDir);
+      if (project) {
+        this.projectDirIndex.set(project.id, projectDir);
+        await this.ensureProjectStructure(projectDir);
+        projects.push(project);
+      }
+    }
+
     return projects.sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
@@ -642,6 +834,7 @@ export class LocalStorage {
     };
 
     await this.writeFileSafely(
+    await fs.writeFile(
       path.join(projectDir, 'canvases', `${id}.json`),
       JSON.stringify(fullCanvas, null, 2)
     );
@@ -737,6 +930,7 @@ export class LocalStorage {
     };
 
     await this.writeFileSafely(
+    await fs.writeFile(
       path.join(projectDir, 'conversations', `${id}.json`),
       JSON.stringify(fullConversation, null, 2)
     );
@@ -828,6 +1022,9 @@ export class LocalStorage {
 
     const fullPath = path.join(projectDir, 'files', filePath);
     await this.writeFileSafely(fullPath, content);
+    const dir = path.dirname(fullPath);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(fullPath, content, 'utf-8');
   }
 
   async readFile(projectId: string, filePath: string): Promise<string | null> {
