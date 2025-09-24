@@ -27,16 +27,27 @@ export class CodeManager {
     }
 
     async write(action: Action) {
+        let wroteToSandbox = false;
         try {
             // TODO: This is a hack to write code, we should refactor this
-            if (action.type === 'write-code' && action.diffs[0]) {
-                await this.editorEngine.activeSandbox.writeFile(
-                    action.diffs[0].path,
-                    action.diffs[0].generated,
-                );
+            if (action.type === 'write-code') {
+                for (const diff of action.diffs) {
+                    const success = await this.editorEngine.activeSandbox.writeFile(
+                        diff.path,
+                        diff.generated,
+                    );
+                    wroteToSandbox = wroteToSandbox || success;
+                }
             } else {
                 const requests = await this.collectRequests(action);
-                await this.writeRequest(requests);
+                if (requests.length > 0) {
+                    const wrote = await this.writeRequest(requests);
+                    wroteToSandbox = wroteToSandbox || wrote;
+                }
+            }
+
+            if (wroteToSandbox) {
+                this.editorEngine.frames.reloadAllViews();
             }
         } catch (error) {
             console.error('Error writing requests:', error);
@@ -47,12 +58,18 @@ export class CodeManager {
         }
     }
 
-    async writeRequest(requests: CodeDiffRequest[]) {
+    async writeRequest(requests: CodeDiffRequest[]): Promise<boolean> {
         const groupedRequests = await this.groupRequestByFile(requests);
-        const codeDiffs = await processGroupedRequests(groupedRequests);
-        for (const diff of codeDiffs) {
-            await this.editorEngine.activeSandbox.writeFile(diff.path, diff.generated);
+        if (groupedRequests.size === 0) {
+            return false;
         }
+        const codeDiffs = await processGroupedRequests(groupedRequests);
+        let wrote = false;
+        for (const diff of codeDiffs) {
+            const success = await this.editorEngine.activeSandbox.writeFile(diff.path, diff.generated);
+            wrote = wrote || success;
+        }
+        return wrote;
     }
 
     private async collectRequests(action: Action): Promise<CodeDiffRequest[]> {
