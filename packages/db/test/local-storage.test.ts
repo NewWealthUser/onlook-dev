@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -71,6 +72,38 @@ describe('LocalStorage project structure', () => {
     for (const subdirectory of requiredSubdirectories) {
       const stats = await fs.stat(path.join(projectDir, subdirectory));
       expect(stats.isDirectory()).toBe(true);
+    }
+  });
+});
+
+describe('LocalStorage access guidance', () => {
+  it('surfaced message references Full Disk Access when the root directory is blocked', async () => {
+    const blockedPath = path.join(tmpdir(), 'onlook-permission-denied');
+    const accessError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    const accessSpy = spyOn(fs, 'access').mockRejectedValue(accessError);
+
+    try {
+      const storage = new LocalStorage(blockedPath);
+      await expect(storage.listProjects()).rejects.toThrow(
+        /macos-permissions\.md#full-disk-access/i
+      );
+    } finally {
+      accessSpy.mockRestore();
+      await fs.rm(blockedPath, { recursive: true, force: true });
+    }
+  });
+
+  it('reminds the user when the configured root path is a file', async () => {
+    const filePath = path.join(tmpdir(), 'onlook-file-root');
+    await fs.writeFile(filePath, 'not a directory');
+
+    try {
+      const storage = new LocalStorage(filePath);
+      await expect(storage.listProjects()).rejects.toThrow(
+        /macos-permissions\.md#projects-root-layout/i
+      );
+    } finally {
+      await fs.rm(filePath, { recursive: true, force: true });
     }
   });
 });
