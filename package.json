@@ -20,6 +20,7 @@
         "typecheck": "bun --cwd apps/web/client run typecheck",
         "lint": "bun --cwd apps/web/client run lint",
         "setup:check": "bun ./tooling/scripts/setup-check.ts",
+        "smoke-dev": "node scripts/smoke-dev.mjs",
         "prepare": "husky",
         "clean": "git clean -xdf node_modules"
     },
