@@ -1,3 +1,8 @@
+import {
+    CodeProvider,
+    createCodeProviderClient,
+    getStaticCodeProvider,
+} from '@onlook/code-provider';
 import { env } from '@/env';
 import { CodeProvider, createCodeProviderClient, getStaticCodeProvider } from '@onlook/code-provider';
 import { getSandboxPreviewUrl } from '@onlook/constants';
@@ -5,8 +10,24 @@ import { shortenUuid } from '@onlook/utility/src/id';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { TRPCError } from '@trpc/server';
+import path from 'path';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
+import { env } from '@/env';
+
+const LOCAL_SANDBOX_PREFIX = 'local-';
+const PROJECTS_ROOT = path.resolve(env.ONLOOK_PROJECTS_DIR);
+
+function sanitizeSandboxId(sandboxId: string): string {
+    return sandboxId.replace(/[^a-zA-Z0-9-_]/g, '');
+}
+
+function resolveProviderType(sandboxId: string, requested?: CodeProvider) {
+    if (requested) {
+        return requested;
+    }
+    return sandboxId.startsWith(LOCAL_SANDBOX_PREFIX) ? CodeProvider.Local : CodeProvider.CodeSandbox;
+}
 
 const getProjectsRoot = () => env.ONLOOK_PROJECTS_DIR;
 
@@ -22,12 +43,24 @@ async function ensureProjectsRoot() {
 async function getProvider({
     sandboxId,
     userId,
-    provider = CodeProvider.Local,
+    provider,
 }: {
     sandboxId: string,
     provider?: CodeProvider,
     userId?: undefined | string,
 }) {
+    const resolvedProvider = resolveProviderType(sandboxId, provider);
+
+    if (resolvedProvider === CodeProvider.Local) {
+        const sanitizedId = sanitizeSandboxId(sandboxId);
+        const projectPath = path.join(PROJECTS_ROOT, sanitizedId);
+        return createCodeProviderClient(CodeProvider.Local, {
+            providerOptions: {
+                local: {
+                    sandboxId,
+                    projectPath,
+                    preferredPort: 3000,
+                    projectsRoot: PROJECTS_ROOT,
     await ensureProjectsRoot();
 
     if (provider === CodeProvider.Local) {
@@ -39,7 +72,7 @@ async function getProvider({
                 },
             },
         });
-    } else if (provider === CodeProvider.CodeSandbox) {
+    } else if (resolvedProvider === CodeProvider.CodeSandbox) {
         return createCodeProviderClient(CodeProvider.CodeSandbox, {
             providerOptions: {
                 codesandbox: {
@@ -66,9 +99,11 @@ export const sandboxRouter = createTRPCRouter({
         )
         .mutation(async ({ input, ctx }) => {
             const userId = ctx.user.id;
+            const providerType = resolveProviderType(input.sandboxId);
             const provider = await getProvider({
                 sandboxId: input.sandboxId,
                 userId,
+                provider: providerType,
             });
             const session = await provider.createSession({
                 args: {
@@ -76,7 +111,10 @@ export const sandboxRouter = createTRPCRouter({
                 },
             });
             await provider.destroy();
-            return session;
+            return {
+                provider: providerType,
+                session,
+            };
         }),
     hibernate: protectedProcedure
         .input(
@@ -85,7 +123,8 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input }) => {
-            const provider = await getProvider({ sandboxId: input.sandboxId });
+            const providerType = resolveProviderType(input.sandboxId);
+            const provider = await getProvider({ sandboxId: input.sandboxId, provider: providerType });
             try {
                 await provider.pauseProject({});
             } finally {
@@ -93,7 +132,8 @@ export const sandboxRouter = createTRPCRouter({
             }
         }),
     list: protectedProcedure.input(z.object({ sandboxId: z.string() })).query(async ({ input }) => {
-        const provider = await getProvider({ sandboxId: input.sandboxId });
+        const providerType = resolveProviderType(input.sandboxId);
+        const provider = await getProvider({ sandboxId: input.sandboxId, provider: providerType });
         const res = await provider.listProjects({});
         // TODO future iteration of code provider abstraction will need this code to be refactored
         if ('projects' in res) {
@@ -160,7 +200,8 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input }) => {
-            const provider = await getProvider({ sandboxId: input.sandboxId });
+            const providerType = resolveProviderType(input.sandboxId);
+            const provider = await getProvider({ sandboxId: input.sandboxId, provider: providerType });
             try {
                 await provider.stopProject({});
             } finally {
@@ -177,6 +218,9 @@ export const sandboxRouter = createTRPCRouter({
         .mutation(async ({ input }) => {
             try {
                 // Create a local sandbox ID
+                const sandboxId = `${LOCAL_SANDBOX_PREFIX}${Math.random().toString(36).substring(2)}${Date.now().toString(36)}`;
+                const sanitizedId = sanitizeSandboxId(sandboxId);
+                const projectPath = path.join(PROJECTS_ROOT, sanitizedId);
                 const sandboxId = Math.random().toString(36).substring(2) + Date.now().toString(36);
                 await ensureProjectsRoot();
                 const projectPath = resolveProjectPath(sandboxId);

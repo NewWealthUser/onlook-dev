@@ -1,9 +1,23 @@
 import { CodeProvider } from './providers';
-import { LocalProvider, type LocalProviderOptions } from './providers/local';
+import {
+    LocalProvider,
+    type LocalCreateSessionOutput,
+    type LocalProviderGetSession,
+    type LocalProviderOptions,
+    type LocalSandboxLogEntry,
+    type LocalSandboxLogLevel,
+} from './providers/local';
 import { CodesandboxProvider, type CodesandboxProviderOptions } from './providers/codesandbox';
 import { NodeFsProvider, type NodeFsProviderOptions } from './providers/nodefs';
 export * from './providers';
 export { LocalProvider } from './providers/local';
+export type {
+    LocalProviderOptions,
+    LocalProviderGetSession,
+    LocalCreateSessionOutput,
+    LocalSandboxLogEntry,
+    LocalSandboxLogLevel,
+} from './providers/local';
 export { CodesandboxProvider } from './providers/codesandbox';
 export { NodeFsProvider } from './providers/nodefs';
 export * from './types';
