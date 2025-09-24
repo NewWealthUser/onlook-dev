@@ -25,6 +25,7 @@ export const ChatHistory = observer(({ isOpen, onOpenChange }: ChatHistoryProps)
     const editorEngine = useEditorEngine();
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const handlePopoverOpenChange = (open: boolean) => {
         if (!showDeleteDialog) {
@@ -32,11 +33,20 @@ export const ChatHistory = observer(({ isOpen, onOpenChange }: ChatHistoryProps)
         }
     };
 
-    const handleDeleteConversation = () => {
-        if (conversationToDelete) {
-            editorEngine.chat.conversation.deleteConversation(conversationToDelete);
-            setShowDeleteDialog(false);
-            setConversationToDelete(null);
+    const handleDeleteConversation = async () => {
+        if (!conversationToDelete || isDeleting) {
+            return;
+        }
+
+        setIsDeleting(true);
+        try {
+            const success = await editorEngine.chat.conversation.deleteConversation(conversationToDelete);
+            if (success) {
+                setShowDeleteDialog(false);
+                setConversationToDelete(null);
+            }
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -122,7 +132,16 @@ export const ChatHistory = observer(({ isOpen, onOpenChange }: ChatHistoryProps)
                     </div>
                 </div>
             </PopoverContent>
-            <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <AlertDialog
+                open={showDeleteDialog}
+                onOpenChange={(open) => {
+                    setShowDeleteDialog(open);
+                    if (!open) {
+                        setConversationToDelete(null);
+                        setIsDeleting(false);
+                    }
+                }}
+            >
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>
@@ -134,15 +153,28 @@ export const ChatHistory = observer(({ isOpen, onOpenChange }: ChatHistoryProps)
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <Button variant={'ghost'} onClick={() => setShowDeleteDialog(false)}>
+                        <Button
+                            variant={'ghost'}
+                            onClick={() => {
+                                setShowDeleteDialog(false);
+                                setConversationToDelete(null);
+                                setIsDeleting(false);
+                            }}
+                            disabled={isDeleting}
+                        >
                             Cancel
                         </Button>
                         <Button
                             variant={'destructive'}
                             className="rounded-md text-sm"
                             onClick={handleDeleteConversation}
+                            disabled={isDeleting}
                         >
-                            Delete
+                            {isDeleting ? (
+                                <Icons.LoadingSpinner className="h-4 w-4 animate-spin" />
+                            ) : (
+                                'Delete'
+                            )}
                         </Button>
                     </AlertDialogFooter>
                 </AlertDialogContent>

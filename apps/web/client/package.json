@@ -24,6 +24,7 @@
         "lint:fix": "next lint --fix",
         "build": "next build",
         "start": "next start",
+        "smoke-dev": "node ../../../scripts/smoke-dev.mjs",
         "preview": "bun run build && bun run start",
         "build:standalone": "STANDALONE_BUILD=true next build && { cp -r public .next/standalone/apps/web/client/ && cp -r .next/static .next/standalone/apps/web/client/.next/; } 2>/dev/null",
         "start:standalone": "bun .next/standalone/apps/web/client/server.js",

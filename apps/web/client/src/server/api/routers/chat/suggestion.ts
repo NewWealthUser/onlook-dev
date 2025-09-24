@@ -1,28 +1,29 @@
 import { initModel } from '@onlook/ai';
 import { SUGGESTION_SYSTEM_PROMPT } from '@onlook/ai/src/prompt/suggest';
-import { conversations } from '@onlook/db';
+import { localStorage } from '@onlook/db/src/local-storage';
 import type { ChatSuggestion } from '@onlook/models';
 import { LLMProvider, OPENROUTER_MODELS } from '@onlook/models';
 import { ChatSuggestionsSchema } from '@onlook/models/chat';
 import { convertToModelMessages, generateObject } from 'ai';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
 
 export const suggestionsRouter = createTRPCRouter({
     generate: protectedProcedure
         .input(z.object({
+            projectId: z.string(),
             conversationId: z.string(),
             messages: z.array(z.object({
                 role: z.enum(['user', 'assistant', 'system']),
                 content: z.string(),
             })),
         }))
-        .mutation(async ({ ctx, input }) => {
+        .mutation(async ({ input }) => {
             const { model, headers } = await initModel({
                 provider: LLMProvider.OPENROUTER,
                 model: OPENROUTER_MODELS.OPEN_AI_GPT_5_NANO,
             });
+
             const { object } = await generateObject({
                 model,
                 headers,
@@ -43,14 +44,17 @@ export const suggestionsRouter = createTRPCRouter({
                 ],
                 maxOutputTokens: 10000,
             });
+
             const suggestions = object.suggestions satisfies ChatSuggestion[];
+
             try {
-                await ctx.db.update(conversations).set({
+                await localStorage.updateConversation(input.projectId, input.conversationId, {
                     suggestions,
-                }).where(eq(conversations.id, input.conversationId));
+                });
             } catch (error) {
                 console.error('Error updating conversation suggestions:', error);
             }
+
             return suggestions;
         }),
 });

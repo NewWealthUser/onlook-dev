@@ -87,26 +87,43 @@ export class ConversationManager {
         };
     }
 
-    deleteConversation(id: string) {
+    async deleteConversation(id: string): Promise<boolean> {
         if (!this.current) {
             console.error('No conversation found');
-            return;
+            return false;
         }
 
         const index = this.conversations.findIndex((c) => c.id === id);
         if (index === -1) {
             console.error('No conversation found with id', id);
-            return;
+            return false;
         }
-        this.conversations.splice(index, 1);
-        void this.deleteConversationInStorage(id);
-        if (this.current?.id === id) {
-            if (this.conversations.length > 0 && !!this.conversations[0]) {
-                void this.selectConversation(this.conversations[0].id);
+
+        const [removed] = this.conversations.splice(index, 1);
+        const wasCurrent = this.current?.id === id;
+
+        try {
+            await this.deleteConversationInStorage(id);
+        } catch (error) {
+            console.error('Error deleting conversation', error);
+            toast.error('Error deleting conversation.', {
+                description: error instanceof Error ? error.message : 'Unknown error',
+            });
+            if (removed) {
+                this.conversations.splice(index, 0, removed);
+            }
+            return false;
+        }
+
+        if (wasCurrent) {
+            if (this.conversations.length > 0 && this.conversations[0]) {
+                await this.selectConversation(this.conversations[0].id);
             } else {
-                void this.startNewConversation();
+                await this.startNewConversation();
             }
         }
+
+        return true;
     }
 
     async generateTitle(content: string): Promise<void> {
@@ -115,6 +132,7 @@ export class ConversationManager {
             return;
         }
         const title = await api.chat.conversation.generateTitle.mutate({
+            projectId: this.editorEngine.projectId,
             conversationId: this.current?.id,
             content,
         });
@@ -142,11 +160,17 @@ export class ConversationManager {
     }
 
     async updateConversationInStorage(conversation: Partial<ChatConversation> & { id: string }) {
-        await api.chat.conversation.update.mutate(conversation);
+        await api.chat.conversation.update.mutate({
+            projectId: this.editorEngine.projectId,
+            ...conversation,
+        });
     }
 
     async deleteConversationInStorage(id: string) {
-        await api.chat.conversation.delete.mutate({ conversationId: id });
+        await api.chat.conversation.delete.mutate({
+            projectId: this.editorEngine.projectId,
+            conversationId: id,
+        });
     }
 
     clear() {
